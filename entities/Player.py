@@ -1,4 +1,4 @@
-from Item import Item
+from .Item import Item
 
 class Player:
     

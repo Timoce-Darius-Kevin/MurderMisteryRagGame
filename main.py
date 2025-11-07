@@ -1,6 +1,6 @@
 from entities.Player import Player
 from entities.Location import Location
-from entities.Conversation import Conversation
+from entities.Conversation import Question
 from managers.GameManager import GameManager
 import random
 
@@ -54,24 +54,13 @@ def run_game(game_manager: GameManager):
             selected_player = get_player_choice(players, "question")
             
             question = input("Enter yout question:> ")
-            responses = [
-                "I don't know anything about that.",
-                "I was in the library at that time.",
-                "I saw something suspicious earlier...",
-                "That's an interesting question.",
-                "I think you should ask someone else."
-            ]
-            response = random.choice(responses)
-            suspicion_change = random.randint(-5, 10)
             
-            conversation: Conversation = Conversation(
+            conversation: Question = Question(
                 game_manager.user_player,
                 selected_player,
                 question,
-                response,
-                suspicion_change
             )
-            game_manager.strike_conversation(conversation)
+            response, suspicion_change = game_manager.strike_conversation(conversation)
             game_manager.conversation_history.append(conversation)
             print(f"\n{selected_player.name} says: {response}")
             if suspicion_change != 0:
@@ -99,7 +88,7 @@ def run_game(game_manager: GameManager):
 
 def main():
     # placeholder location. On initialization it will have the starting room which is enough for phase 1
-    location: Location = Location("The Haunted Placeholder", "A placeholder full of spooky plaeholders", 20)
+    location: Location = Location("The Haunted Placeholder", "A placeholder full of spooky placeholders", 13)
     user_player: Player = register_user_player(location)
     game_manager: GameManager = GameManager(location, user_player)
     run_game(game_manager)

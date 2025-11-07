@@ -1,8 +1,9 @@
 from entities.Player import Player
 from entities.Room import Room
-from entities.Conversation import Conversation
+from entities.Conversation import Conversation, Question
 from entities.Location import Location
 from entities.GameState import GameState
+from .RagManager import RagManager
 import random
 
 class GameManager:
@@ -14,8 +15,9 @@ class GameManager:
         self.player_tracking: dict[Player, Room] = {}
         self.game_state = game_state
         self.max_turns = max_turns
-        self.conversation_history: list[Conversation] = []
+        self.conversation_history: list[Question] = []
         self.initialize_game()
+        self.rag_manager = RagManager()
         # The Rag engine should be initialized here, and it will handle the conversations, npc movement and repopulation of the game_state.
         # The Rag engine should be managed by the Game engine
 
@@ -63,11 +65,14 @@ class GameManager:
         if player in self.player_tracking:
             self.player_tracking[player] = room
         self.advance_turn()
-
-    def strike_conversation(self, conversation: Conversation) -> None:
-        conversation.listener.suspicion += conversation.suspicion_change_listener
-        conversation.speaker.suspicion += conversation.suspicion_change_listener
+    def strike_conversation(self, question: Question) -> tuple[str, int]:
+        response_text, suspicion_change = self.rag_manager.generate_response(question)
+        conversation = Conversation(question, response_text)
+        self.rag_manager.add_conversation(conversation, self.game_state.current_turn)
+        question.speaker.suspicion += suspicion_change
         self.advance_turn()
+        self.advance_turn()
+        return response_text, suspicion_change
     
     def accuse_player(self, accuser: Player, accused: Player) -> bool:
         if accused.murderer:

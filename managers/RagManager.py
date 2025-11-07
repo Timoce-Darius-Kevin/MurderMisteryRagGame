@@ -1,12 +1,16 @@
+import json
 import os
+import torch
+import random
 from typing import List
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
 from langchain_chroma import Chroma
-from langchain.schema import Document
+from langchain_core.documents import Document
 from langchain_huggingface import ChatHuggingFace
 from langchain_core.prompts import ChatPromptTemplate
-from entities.Conversation import Conversation
-import random
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from entities.Conversation import Conversation, Question
+
 
 class RagManager:
     
@@ -35,30 +39,87 @@ class RagManager:
                 huggingfacehub_api_token=os.getenv("HF_TOKEN", "")
             )
     
+    def _initialize_llm(self, model_name: str):
+        """Initialize the LLM with proper error handling"""
+        try:
+            # Option 1: Using HuggingFace Pipeline (local model)
+            print(f"Loading model: {model_name}")
+            
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch.float16,
+                device_map="auto",
+                low_cpu_mem_usage=True
+            )
+            
+            # Create text generation pipeline
+            pipe = pipeline(
+                "text-generation",
+                model=model,
+                tokenizer=tokenizer,
+                max_new_tokens=100,
+                temperature=0.7,
+                top_p=0.9,
+                repetition_penalty=1.1,
+                pad_token_id=tokenizer.eos_token_id
+            )
+            
+            llm = HuggingFacePipeline(pipeline=pipe)
+            print("Model loaded successfully!")
+            return llm
+            
+        except Exception as e:
+            print(f"Error loading model {model_name}: {e}")
+            print("Falling back to simpler model...")
+            
+            # Fallback to a smaller model
+            try:
+                fallback_model = "microsoft/DialoGPT-small"
+                print(f"Trying fallback model: {fallback_model}")
+                
+                tokenizer = AutoTokenizer.from_pretrained(fallback_model)
+                model = AutoModelForCausalLM.from_pretrained(fallback_model)
+                
+                pipe = pipeline(
+                    "text-generation",
+                    model=model,
+                    tokenizer=tokenizer,
+                    max_new_tokens=50,
+                    temperature=0.7
+                )
+                
+                llm = HuggingFacePipeline(pipeline=pipe)
+                print("Fallback model loaded successfully!")
+                return llm
+                
+            except Exception as e2:
+                print(f"Error loading fallback model: {e2}")
+                print("Using rule-based fallback system.")
+                return None
+    
     def add_conversation(self, conversation: Conversation, turn: int) -> None:
         """Store a conversation in memory"""
         doc = Document(
                 page_content=f"Question: {conversation.question}\nResponse: {conversation.response}",
                 metadata={
-                    "player_ids": f"{conversation.speaker.id} - {conversation.listener.id}",\
-                    "players": f"{conversation.speaker.name} - {conversation.listener.name}",\
-                    "suspicion_change_user": conversation.suspicion_change_speaker,\
-                    "suspicion_change_player": conversation.suspicion_change_listener,\
+                    "player_ids": f"{conversation.question.speaker.id} - {conversation.question.listener.id}",\
+                    "players": f"{conversation.question.speaker.name} - {conversation.question.listener.name}",\
                     "turn": turn
                     }
                 )
         self.vector_store.add_documents([doc])
         
-    def get_conversation_context(self, current_conversation: Conversation, number_docs_to_retrieve: int = 3) -> str:
+    def get_conversation_context(self, current_question: Question, number_docs_to_retrieve: int = 3) -> str:
         """Retrieve relevant conversation history"""
         
         if self.vector_store._collection.count() == 0:
             return "No previous conversations."
         
         results = self.vector_store.similarity_search(
-            f"Conversation with {current_conversation.speaker}: {current_conversation.question}",
+            f"Conversation with {current_question.speaker}: {current_question.question}",
             k=number_docs_to_retrieve,
-            filter={"players":f"{current_conversation.speaker.name} - {current_conversation.listener.name}"}
+            filter={"players":f"{current_question.speaker.name} - {current_question.listener.name}"}
         )
         
         context = "Previous conversations:\n"
@@ -67,7 +128,7 @@ class RagManager:
         
         return context
 
-    def generate_response(self, current_conversation: Conversation, conversation_history: List['Conversation'] = []):
+    def generate_response(self, current_question: Question, conversation_history: List[Question] = []):
         """Generate NPC response using RAG"""
         
         if not self.llm:
@@ -82,17 +143,17 @@ class RagManager:
 
             return random.choice(fallback_responses), random.randint(-2, 5)
         
-        context = self.get_conversation_context(current_conversation)
+        context = self.get_conversation_context(current_question)
         
         prompt_template = ChatPromptTemplate.from_messages([
-            ("system", f"""You are {current_conversation.speaker.name} in a murder mystery game. 
+            ("system", f"""You are {current_question.speaker.name} in a murder mystery game. 
              Respond naturally to questions while hiding that you're the murderer (if you are).
              Use the conversation history to maintain consistency.
              
              Conversation History:
              {context}
              
-             Current situation: Suspicion level: {current_conversation.speaker.suspicion}"""),
+             Current situation: Suspicion level: {current_question.speaker.suspicion}"""),
             ("human", "{question}")
         ])
         
@@ -100,23 +161,25 @@ class RagManager:
         
         try:
             response = chain.invoke({
-                "player_name": current_conversation.speaker.name,
+                "player_name": current_question.speaker.name,
                 "context": context,
-                "suspicion": current_conversation.speaker.suspicion,
-                "question": current_conversation.question
+                "suspicion": current_question.speaker.suspicion,
+                "question": current_question.question
             })
             
             response_text = response.content if hasattr(response, 'content') else str(response)
-            
+            if not isinstance(response_text, str):
+                try:
+                    response_text = json.dumps(response_text)
+                except Exception:
+                    response_text = str(response_text)
+                    
             # Simple suspicion change logic for Phase 1
             suspicious_keywords = ["murder", "kill", "weapon", "blood", "alibi"]
-            suspicion_change = 3 if any(keyword in current_conversation.question.lower() for keyword in suspicious_keywords) else 0
+            suspicion_change = 3 if any(keyword in current_question.question.lower() for keyword in suspicious_keywords) else 0
             
             return response_text, suspicion_change
             
         except Exception as e:
             print(f"LLM Error: {e}")
-            return "I'm having trouble responding right now.", 0
-
-# Singleton instance
-rag_manager = RagManager()   
+            return "I'm having trouble responding right now.", 0   

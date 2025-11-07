@@ -1,4 +1,4 @@
-from Room import Room
+from .Room import Room
 class Location:
     
     def __init__(self, name: str, description: str, max_players: int, rooms: list[Room] = []) -> None:
