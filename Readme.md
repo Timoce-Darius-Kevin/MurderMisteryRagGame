@@ -1,3 +1,28 @@
 # Game Idea
 
-- The general idea is each game takes place in a location which holds some effect over the players. The game starts with all the players at a location. one of these players will be handled by the user, all the others by the AI. Each Player has an inventory with only one item within one player's inventory being the murder weapon, and that player being the murderer. Players will may move from room to room, and the user may talk to other players. The AI model will handle the actions and responses given by other players. If the AI model deems a response suspicious or the player stays in a room too long the suspicion meter will increase. The AI is not allowed under any circumstance to say what is the murder weapon or who is the murderer. Every turn, with each turn being an action decided by the user, and actions are to move to an available room, to wait in the current room to ask someone a question or to accuse someone to be a murderer, each AI player will take a 10% chance decision to move to another room. 
+
+## Broad Game Idea
+
+    The game is a murder mistery text adventure. A free AI model from hugging-face will be used, and it will control the npcs, manage game states using agents and rag. The game will take place at a Location, with a number of rooms. The location will have an overarching effect on the players, their items and their jobs. Each room will have a temporary effect on the players, while they are inside it. Each player will have a job which will also have an effect. Each player will have an inventory of items, each one having an effect. Throughout the game the players may explore the area and find items that will have an effect and/or help them solve a puzzle. The player may have conversations with any players in the same room. Events will trigger for any player based on their job, inventory, item-use, room-type, location-type, active effect/effects or in the case of the user player: the conversation topic.
+
+    The game functions on a turn based system, where one action from the player consists of one turn. An action consists of a move on the map or a conversation being struck.
+
+## First development phase
+
+    In the first phase the user should be able to converse with the other players (treated as if everyone is in the same room) and be able to accuse another player of being the murderer. The user should be able to see data from the other player such as name and suspicion score but not their inventory, when choosing to ask them questions. Accusations when wrong will increase the suspicion score of the user_player massively. The AI model should handle conversations, remember conversations between 2 players using RAG(tools and maybe agents? whichever is best practice). In the current phase accusations when right should end the game as a win for the user-player.
+
+## Second development phase
+
+    In the second dev phase I want the player to be able to move between rooms and strike up conversations. Locations, and players will be placeholders. Players will also move around randomly. The Rag system should be implemented to handle remembering the game states and manage the conversations, as well as the positions of the players.
+
+## Third development phase
+
+    In the third phase the application should load player and location data from one or more JSON or YAML documents and ellaborate based on the minimal data existing in the model classes e.g. Location("Haunted house", "spooky house full of ghosts") will become a paragraph about the fictive history of the house and why is it haunted. Same with the players and their jobs. Conversations should flow better at this point. Similar behaviour will happen with the rooms of the location, the ai will develop the name of the room based on a small name and description and remember it.
+
+## Fourth development phase
+
+    During this phase rooms will become connected together in a house like manner (e.g. Bathroom leads to the hallway not to every other room in the house), and the players may move between rooms that are connected together. Rooms will also have occupancy limits, that when reached should make them unavailable.
+
+## Further phases - To be decided at a later point in time.
+
+    Effects and events should be implemented. The game may have puzzles and/or antagonists that acively hunt the player. The murderer may be an antagonist and not a player and the players may have to escape. Story structures to guide the AI in developing a story. Stats for the player, that the effects may act upon such as discovery rate for puzzle items. Complex AI behaviour, with players finding items and having to be convinced to use it in the right place or give it to the player. The inventory system. An evidence system should exist for accusations. A system when the murderer even though is accused they should be voted by the other inoccent player before the murder is solved. In the case of an antagonist being present, players may die, leaving a body that is unable to respond.

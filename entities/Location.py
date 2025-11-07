@@ -1,4 +1,3 @@
-from Effect import Effect
 from Room import Room
 class Location:
     

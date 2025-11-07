@@ -1,4 +1,3 @@
-from Effect import Effect
 class Job:
     def __init__(self, title: str, description: str) -> None:
         self.title: str = title
