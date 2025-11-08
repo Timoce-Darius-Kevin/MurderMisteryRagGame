@@ -18,9 +18,6 @@ class GameManager:
         self.conversation_history: list[Question] = []
         self.initialize_game()
         self.rag_manager = RagManager()
-        # The Rag engine should be initialized here, and it will handle the conversations, npc movement and repopulation of the game_state.
-        # The Rag engine should be managed by the Game engine
-
     
     def initialize_game(self) -> None:
         """ Place all players in the starting room """
@@ -38,7 +35,6 @@ class GameManager:
         murderer.murderer = True
         print(f"DEBUG: Murderer is {murderer.name}")
 
-    
     def add_player(self, player) -> None:
         self.player_tracking[player] = self.location.starting_room
     
