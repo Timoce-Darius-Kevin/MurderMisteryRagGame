@@ -23,9 +23,14 @@ class GameManager:
         """ Place all players in the starting room """
         # In phase 1 this is the only room, where everyone is.
         # In phase 1 and 2 all players are placeholders with placeholder data.
+        player_names = ["James", "Mary", "Michael", "Patricia", "John", "Jennifer", "Robert", "Linda", "David", "Elizabeth",\
+            "William", "Barbara", "Richard", "Susan", "Joseph", "Jessica", "Thomas", "Karen", "Christopher", "Sarah"]
+
+        player_surnames = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez",\
+            "Martinez", "Hernandez", "Lopez", "Gonzales", "Wilson", "Anderson"]
         self.add_player(self.user_player)
         for player_idx in range(1, self.location.max_players):
-            new_player = Player(id=player_idx, name=f"Player {player_idx}", suspicion=0)
+            new_player = Player(id=player_idx, name=f"{random.choice(player_names)} {random.choice(player_surnames)}", suspicion=0)
             self.add_player(new_player)
         self.select_murderer()
     

@@ -15,7 +15,7 @@ from entities.Conversation import Conversation, Question
 load_dotenv()
 class RagManager:
     
-    def __init__(self, model_name: str | None = os.getenv("DIALO_GPT_MEDIUM")) -> None:
+    def __init__(self, model_name: str | None = os.getenv("ZEPHYR_7B_HUGGINGFACEHUB")) -> None:
         
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2"
@@ -71,7 +71,7 @@ class RagManager:
             
             # Fallback to a smaller model
             try:
-                fallback_model = os.getenv("LLAMA_3B_HUGGINGFACEHUB")
+                fallback_model = os.getenv("MISTRAL_7B_HUGGINGFACEHUB")
                 print(f"Trying fallback model: {fallback_model}")
                 
                 tokenizer = AutoTokenizer.from_pretrained(fallback_model)
@@ -214,33 +214,35 @@ class RagManager:
         return response, suspicion_change
     
     def _clean_response(self, response: str) -> str:
-        """Clean up LLM response - ROBUST VERSION"""
-        # List of possible chat format delimiters to split on
-        delimiters = [
-            "[/INST]", 
-            "[/INST] ", 
-            "### Assistant:",
-            "### Assistant:", 
-            "Assistant:",
-            "\n\n"
-        ]
+        """Model-aware cleaning function"""
         
-        # Try each delimiter to find the actual response
-        for delimiter in delimiters:
-            if delimiter in response:
-                parts = response.split(delimiter, 1)
-                if len(parts) > 1:
-                    response = parts[1].strip()
-                    break
+        # Detect model type by response format
+        if "<|assistant|>" in response:
+            # Zephyr format
+            parts = response.split("<|assistant|>", 1)
+            if len(parts) > 1:
+                response = parts[1].split("<|user|>")[0].strip()
+        elif "[/INST]" in response:
+            # Mistral format  
+            parts = response.split("[/INST]", 1)
+            if len(parts) > 1:
+                response = parts[1].strip()
+        else:
+            # Generic fallback - try multiple delimiters
+            for delimiter in ["### Assistant:", "Assistant:", "\n\n"]:
+                if delimiter in response:
+                    parts = response.split(delimiter, 1)
+                    if len(parts) > 1:
+                        response = parts[1].strip()
+                        break
         
-        # Clean up any remaining special tokens
-        special_tokens = ["<|endoftext|>", "<s>", "</s>", "[INST]", "[/INST]"]
+        # Common cleanup for all models
+        special_tokens = ["<|endoftext|>", "<s>", "</s>", "[INST]", "[/INST]", "<|system|>", "<|user|>", "<|assistant|>"]
         for token in special_tokens:
             response = response.replace(token, "")
         
         response = response.strip('"\' \n')
         
-        # Final validation
         if not response or len(response) < 5:
             return "I'm not sure how to respond to that."
         

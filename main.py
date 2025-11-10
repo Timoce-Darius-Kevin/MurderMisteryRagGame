@@ -14,9 +14,9 @@ def print_player_list(players: list[Player], show_suspicion: bool = True):
     print("\nPlayers in the room:")
     for idx, player in enumerate(players):
         if show_suspicion:
-            print(f"{idx}. {player.name} (Suspicion: {player.suspicion})")
+            print(f"{idx + 1}. {player.name} (Suspicion: {player.suspicion})")
         else:
-            print(f"{idx}. {player.name}")
+            print(f"{idx + 1}. {player.name}")
             
 def get_player_choice(players: list[Player], action: str) -> Player:
     while True:
@@ -88,7 +88,7 @@ def run_game(game_manager: GameManager):
 
 def main():
     # placeholder location. On initialization it will have the starting room which is enough for phase 1
-    location: Location = Location("The Haunted Placeholder", "A placeholder full of spooky placeholders", 13)
+    location: Location = Location("The Haunted Manor", "A Manor full of spooky placeholders", 10)
     user_player: Player = register_user_player(location)
     game_manager: GameManager = GameManager(location, user_player)
     run_game(game_manager)
