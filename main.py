@@ -53,7 +53,7 @@ def run_game(game_manager: GameManager):
             print_player_list(players, show_suspicion=True)
             selected_player = get_player_choice(players, "question")
             
-            question = input("Enter yout question:> ")
+            question = input("Enter your question:> ")
             
             conversation: Question = Question(
                 game_manager.user_player,
@@ -74,10 +74,10 @@ def run_game(game_manager: GameManager):
             print_player_list(players, show_suspicion=True)
             accused = get_player_choice(players, "accuse")
             if game_manager.accuse_player(game_manager.user_player, accused):
-                print(f"✅ Correct! {accused.name} was the murderer!")
+                print(f"Correct! {accused.name} was the murderer!")
                 print("You solved the mystery!")
             else:
-                print(f"❌ Wrong accusation! {accused.name} is not the murderer.")
+                print(f"Wrong accusation! {accused.name} is not the murderer.")
                 print("Your suspicion has increased massively!")
             
         elif choice == "3":

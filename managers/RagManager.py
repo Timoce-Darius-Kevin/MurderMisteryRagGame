@@ -1,5 +1,6 @@
 import json
 import os
+from dotenv import load_dotenv, dotenv_values
 import torch
 import random
 from typing import List
@@ -11,10 +12,11 @@ from langchain_core.prompts import ChatPromptTemplate
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from entities.Conversation import Conversation, Question
 
-
+load_dotenv()
 class RagManager:
     
-    def __init__(self, model_name: str = "mistralai/Mistral-7B-Instruct-v0.3") -> None:
+    def __init__(self, model_name: str | None = os.getenv("DIALO_GPT_MEDIUM")) -> None:
+        
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2"
         )
@@ -26,17 +28,20 @@ class RagManager:
         )
         
         self.llm = self._initialize_llm(model_name)
+        self.prompt_template = self._create_prompt_template()
     
-    def _initialize_llm(self, model_name: str):
-        """Initialize the LLM with proper error handling"""
+    def _initialize_llm(self, model_name: str | None):
+        """Initialize the LLM"""
         try:
+            if model_name == None:
+                raise ValueError
             # Option 1: Using HuggingFace Pipeline (local model)
             print(f"Loading model: {model_name}")
             
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             model = AutoModelForCausalLM.from_pretrained(
                 model_name,
-                torch_dtype=torch.float32,
+                dtype=torch.bfloat16,
                 device_map="auto" if torch.cuda.is_available() else None,
                 low_cpu_mem_usage=True
             )
@@ -56,8 +61,9 @@ class RagManager:
             )
             
             llm = HuggingFacePipeline(pipeline=pipe)
+            chat_model = ChatHuggingFace(llm = llm)
             print(f"Model {model_name} loaded successfully!")
-            return llm
+            return chat_model
             
         except Exception as e:
             print(f"Error loading model {model_name}: {e}")
@@ -65,11 +71,11 @@ class RagManager:
             
             # Fallback to a smaller model
             try:
-                fallback_model = "microsoft/DialoGPT-medium"
+                fallback_model = os.getenv("LLAMA_3B_HUGGINGFACEHUB")
                 print(f"Trying fallback model: {fallback_model}")
                 
                 tokenizer = AutoTokenizer.from_pretrained(fallback_model)
-                model = AutoModelForCausalLM.from_pretrained(fallback_model)
+                model = AutoModelForCausalLM.from_pretrained(str(fallback_model))
                 
                 pipe = pipeline(
                     "text-generation",
@@ -80,8 +86,9 @@ class RagManager:
                 )
                 
                 llm = HuggingFacePipeline(pipeline=pipe)
+                chat_model = ChatHuggingFace(llm = llm)
                 print("Fallback model loaded successfully!")
-                return llm
+                return chat_model
                 
             except Exception as e2:
                 print(f"Error loading fallback model: {e2}")
@@ -109,7 +116,7 @@ class RagManager:
         results = self.vector_store.similarity_search(
             f"Conversation with {current_question.speaker}: {current_question.question}",
             k=number_docs_to_retrieve,
-            filter={"players":f"{current_question.speaker.name} - {current_question.listener.name}"}
+            filter={"players":f"{current_question.speaker.id} - {current_question.listener.id}"}
         )
         
         context = "Previous conversations:\n"
@@ -148,20 +155,29 @@ class RagManager:
     
     def _create_prompt(self, question: Question, context: str):
         """Create prompt for the LLM"""
-        prompt = f"""You are {question.listener.name} in a murder mystery game. Respond naturally to the question while staying in character.
-                Context from previous conversations:
-                {context}
+        return self.prompt_template.format_messages(
+                character_name=question.listener.name,
+                context=context,
+                suspicion_level=question.listener.suspicion,
+                role="MURDERER - be defensive and evasive" if question.listener.murderer else "INNOCENT - be helpful and cooperative",
+                question=question.question
+            )
 
-                Your current suspicion level: {question.listener.suspicion}
-                Your role: {'Murderer' if question.listener.murderer else 'Innocent guest'}
+    def _create_prompt_template(self):
+        """Create structured prompt template for consistent message formatting"""
+        return ChatPromptTemplate.from_messages([
+            ("system", """You are {character_name} in a murder mystery game. Respond naturally while staying in character.
 
-                Question from another player: "{question}"
+            Context from previous conversations:
+            {context}
 
-                Respond naturally and briefly (1-4 sentences). Do not break character. Do not reveal you are an AI.
+            Your current suspicion level: {suspicion_level}
+            Your secret role: {role}
 
-                Response:"""
-        return prompt
-
+            Respond naturally and briefly (1-4 sentences). Do not break character. Do not reveal you are an AI."""),
+                    ("human", "{question}")
+                ])
+    
     def fallback_response(self, question: Question):
         """Fallback response system"""
         import random
@@ -188,7 +204,7 @@ class RagManager:
             "I don't appreciate these accusations.",
         ]
         
-        responses = murderer_responses if question.speaker.murderer else innocent_responses
+        responses = murderer_responses if question.listener.murderer else innocent_responses
         response = random.choice(responses)
         
         # Simple suspicion logic
@@ -198,14 +214,36 @@ class RagManager:
         return response, suspicion_change
     
     def _clean_response(self, response: str) -> str:
-        """Clean up LLM response"""
-        # Remove any prompt fragments and extra whitespace
-        if "Response:" in response:
-            response = response.split("Response:")[-1].strip()
-        response = response.split("\n")[0].strip()  # Take first line only
-        response = response.split('.')[0] + '.' if '.' in response else response
+        """Clean up LLM response - ROBUST VERSION"""
+        # List of possible chat format delimiters to split on
+        delimiters = [
+            "[/INST]", 
+            "[/INST] ", 
+            "### Assistant:",
+            "### Assistant:", 
+            "Assistant:",
+            "\n\n"
+        ]
+        
+        # Try each delimiter to find the actual response
+        for delimiter in delimiters:
+            if delimiter in response:
+                parts = response.split(delimiter, 1)
+                if len(parts) > 1:
+                    response = parts[1].strip()
+                    break
+        
+        # Clean up any remaining special tokens
+        special_tokens = ["<|endoftext|>", "<s>", "</s>", "[INST]", "[/INST]"]
+        for token in special_tokens:
+            response = response.replace(token, "")
+        
+        response = response.strip('"\' \n')
+        
+        # Final validation
         if not response or len(response) < 5:
             return "I'm not sure how to respond to that."
+        
         return response
     
     def _calculate_suspicion_change(self, question: str, response: str) -> int:
