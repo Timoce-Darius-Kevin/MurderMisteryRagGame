@@ -1,14 +1,12 @@
 from entities.Player import Player
 from entities.Room import Room
-from entities.Conversation import Conversation, Question
+from entities.Conversation import Question
 from entities.Location import Location
-from entities.GameState import GameState
 from managers.AccusationManager import AccusationManager
 from managers.ConversationManager import ConversationManager
 from managers.GameStateManager import GameStateManager
 from managers.PlayerManager import PlayerManager
 from .RagManager import RagManager
-import random
 
 class GameManager:
     
@@ -34,10 +32,10 @@ class GameManager:
         if player is self.user_player:
             self.game_state_manager.advance_turn()
     
-    def strike_conversation(self, question: Question) -> tuple[str, int]:
-        response, suspicion_change = self.conversation_manager.strike_conversation(question)
+    def strike_conversation(self, question: Question) -> tuple[str, int, int]:
+        response, suspicion_change_speaker, suspicion_change_listener = self.conversation_manager.strike_conversation(question)
         self.game_state_manager.advance_turn()
-        return response, suspicion_change
+        return response, suspicion_change_speaker, suspicion_change_listener
     
     def accuse_player(self, accuser: Player, accused: Player) -> bool:
         result = self.accusation_manager.accuse_player(accuser, accused)

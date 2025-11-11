@@ -1,9 +1,7 @@
-import json
 import os
-from dotenv import load_dotenv, dotenv_values
+from dotenv import load_dotenv
 import torch
 import random
-from typing import List
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
@@ -132,20 +130,16 @@ class RagManager:
             
             prompt = self._create_prompt(current_question, context)
             
-            # print(f"DEBUG - Prompt: {prompt}")
-            
             response = self.llm.invoke(prompt)
             
             response_text = response if isinstance(response, str) else getattr(response, 'content', str(response))
-
-            # print(f"DEBUG - Raw response: {response_text}") 
             
             response_text = self._clean_response(response_text)
             
-            suspicion_change = self._calculate_suspicion_change(current_question.question, response_text)
+            suspicion_change_speaker, suspicion_change_listener = self._calculate_suspicion_change(current_question.question, response_text, current_question.listener.murderer)
             
                 
-            return response_text, suspicion_change 
+            return response_text, suspicion_change_speaker, suspicion_change_listener 
         except Exception as exception:
             print(f"LLM generation error: {exception}")
             return self.fallback_response(current_question)
@@ -201,10 +195,20 @@ class RagManager:
         responses = murderer_responses if question.listener.murderer else innocent_responses
         response = random.choice(responses)
         
-        suspicious_questions = ["murder", "kill", "weapon", "blood", "knife", "gun", "alibi", "where were you"]
-        suspicion_change = 5 if any(word in question.question.lower() for word in suspicious_questions) else random.randint(-2, 2)
+        suspicion_change_speaker = 0
+        suspicion_change_listener = 0
         
-        return response, suspicion_change
+        suspicious_questions = ["murder", "kill", "weapon", "blood", "knife", "gun", "alibi", "where were you"]
+        if any(word in question.question.lower() for word in suspicious_questions):
+            suspicion_change_speaker += 2
+            suspicion_change_listener += 3 if question.listener.murderer else 1
+        
+        # Adjust based on response tone
+        defensive_responses = ["none of your business", "stop asking", "accusation", "wrong person"]
+        if any(word in response.lower() for word in defensive_responses):
+            suspicion_change_listener += 2
+        
+        return response, suspicion_change_speaker, suspicion_change_listener
     
     def _clean_response(self, response: str) -> str:
         """Model-aware cleaning function"""
@@ -238,16 +242,34 @@ class RagManager:
         
         return response
     
-    def _calculate_suspicion_change(self, question: str, response: str) -> int:
+    def _calculate_suspicion_change(self, question: str, response: str, is_murderer: bool) -> tuple[int, int]:
         """Calculate suspicion change based on question and response"""
-        suspicious_keywords = ["murder", "kill", "weapon", "blood", "alibi", "guilty"]
-        defensive_keywords = ["none of your business", "stop asking", "accusation", "wrong person"]
+        suspicious_keywords = ["murder", "kill", "weapon", "blood", "alibi", "guilty", "crime", "dead", "body"]
+        defensive_keywords = ["none of your business", "stop asking", "accusation", "wrong person", "not your concern"]
+        cooperative_keywords = ["help", "assist", "truth", "honest", "cooperate", "investigation"]
         
-        base_change = 0
-        if any(keyword in question.lower() for keyword in suspicious_keywords):
-            base_change += 3
-        if any(keyword in response.lower() for keyword in defensive_keywords):
-            base_change += 2
+        suspicion_change_speaker = 0
+        suspicion_change_listener = 0
+        
+        question_lower = question.lower()
+        if any(keyword in question_lower for keyword in suspicious_keywords):
+            suspicion_change_speaker += 2
+            # TODO: Implement a mood system. If the murderer has a negative mood because of the question their suspicion increases. The murderer may be a good liar or the question might not be inflmmatory decided by the mood system.
+        
+        response_lower = response.lower()
+        if any(keyword in response_lower for keyword in defensive_keywords):
+            suspicion_change_listener += 3
+        
+        elif any(keyword in response_lower for keyword in cooperative_keywords):
+            suspicion_change_listener -= 1
+            suspicion_change_speaker -= 1
+        
+        # Murderers are naturally more suspicious when asked direct questions
+        if is_murderer and any(keyword in question_lower for keyword in suspicious_keywords):
+            suspicion_change_listener += 2
             
-        return min(max(base_change, -5), 10)
+        suspicion_change_speaker = max(min(suspicion_change_speaker, 5), -5)
+        suspicion_change_listener = max(min(suspicion_change_listener, 8), -3)
+        
+        return suspicion_change_speaker, suspicion_change_listener
  
