@@ -7,17 +7,17 @@ The game is a murder mistery text adventure. A free AI model from hugging-face w
 
 The game functions on a turn based system, where one action from the player consists of one turn. An action consists of a move on the map or a conversation being struck.
 
-## First development phase
+## First development phase - COMPLETE
 
-In the first phase the user should be able to converse with the other players (treated as if everyone is in the same room) and be able to accuse another player of being the murderer. The user should be able to see data from the other player such as name and suspicion score but not their inventory, when choosing to ask them questions. Accusations when wrong will increase the suspicion score of the user_player massively. The AI model should handle conversations, remember conversations between 2 players using RAG(tools and maybe agents? whichever is best practice). In the current phase accusations when right should end the game as a win for the user-player.
+In the first phase the user should be able to converse with the other players (treated as if everyone is in the same room) and be able to accuse another player of being the murderer. The user should be able to see data from the other player such as name and suspicion score but not their inventory, when choosing to ask them questions. Accusations when wrong will increase the suspicion score of the user_player massively. The AI model should handle conversations, remember conversations between 2 players using RAG. In the current phase accusations when right should end the game as a win for the user-player.
 
-## Second development phase
+## Second development phase - CURRENTLY IN DEVELOPMENT...
 
-In the second dev phase I want the player to be able to move between rooms and strike up conversations. Locations, and players will be placeholders. Players will also move around randomly. The Rag system should be implemented to handle remembering the game states and manage the conversations, as well as the positions of the players.
+In the second dev phase I want the player to be able to move between rooms and strike up conversations. Locations, and players will be randomly picked names. Players will also move around randomly. The Rag system should be implemented to handle remembering the game states and manage the conversations, as well as the positions of the players. The Rag should also help generate a location and a description that it then remembers and uses further in conversations. Each player will have an inventory of randomly selected items. The murderer will have in their inventory the murder weapon. A new option will be available to ask about inventory.
 
 ## Third development phase
 
-In the third phase the application should load player and location data from one or more JSON or YAML documents and ellaborate based on the minimal data existing in the model classes e.g. Location("Haunted house", "spooky house full of ghosts") will become a paragraph about the fictive history of the house and why is it haunted. Same with the players and their jobs. Conversations should flow better at this point. Similar behaviour will happen with the rooms of the location, the ai will develop the name of the room based on a small name and description and remember it.
+In the third phase the application should load player and location data from one or more JSON or YAML documents and ellaborate based on the minimal data existing in the model classes e.g. Location("Haunted house", "spooky house full of ghosts") will become a paragraph about the fictive history of the house and why is it haunted. Same with the players and their jobs. Conversations should flow better at this point. Similar behaviour will happen with the rooms of the location, the ai will develop the name of the room based on a small name and description and remember it. At the end of this phase the RAG should be able to generate descriptions for players, rooms and the location, and a short narration of the event during an initial loading phase.
 
 ## Fourth development phase
 

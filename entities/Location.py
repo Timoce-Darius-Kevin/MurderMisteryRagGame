@@ -1,7 +1,7 @@
 from .Room import Room
 class Location:
     
-    def __init__(self, name: str, description: str, max_players: int, rooms: list[Room] = []) -> None:
+    def __init__(self, name: str, description: str, max_players: int, event_description = "", rooms: list[Room] = []) -> None:
         self.name: str = name
         self.description: str = description
         # TODO: self.effect: Effect = effect

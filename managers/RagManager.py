@@ -15,7 +15,7 @@ from entities.Conversation import Conversation, Question
 load_dotenv()
 class RagManager:
     
-    def __init__(self, model_name: str | None = os.getenv("ZEPHYR_7B_HUGGINGFACEHUB")) -> None:
+    def __init__(self, model_name: str | None = os.getenv("MISTRAL_7B_HUGGINGFACEHUB")) -> None:
         
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2"
@@ -35,7 +35,6 @@ class RagManager:
         try:
             if model_name == None:
                 raise ValueError
-            # Option 1: Using HuggingFace Pipeline (local model)
             print(f"Loading model: {model_name}")
             
             tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -46,7 +45,6 @@ class RagManager:
                 low_cpu_mem_usage=True
             )
             
-            # Create text generation pipeline
             pipe = pipeline(
                 "text-generation",
                 model=model,
@@ -69,9 +67,8 @@ class RagManager:
             print(f"Error loading model {model_name}: {e}")
             print("Falling back to simpler model...")
             
-            # Fallback to a smaller model
             try:
-                fallback_model = os.getenv("MISTRAL_7B_HUGGINGFACEHUB")
+                fallback_model = os.getenv("ZEPHYR_7B_HUGGINGFACEHUB")
                 print(f"Trying fallback model: {fallback_model}")
                 
                 tokenizer = AutoTokenizer.from_pretrained(fallback_model)
@@ -125,7 +122,7 @@ class RagManager:
         
         return context
 
-    def generate_response(self, current_question: Question, conversation_history: List[Question] = []):
+    def generate_response(self, current_question: Question):
         """Generate NPC response using RAG"""
         
         if not self.llm:
@@ -135,13 +132,13 @@ class RagManager:
             
             prompt = self._create_prompt(current_question, context)
             
-            print(f"DEBUG - Prompt: {prompt}")
+            # print(f"DEBUG - Prompt: {prompt}")
             
             response = self.llm.invoke(prompt)
             
             response_text = response if isinstance(response, str) else getattr(response, 'content', str(response))
 
-            print(f"DEBUG - Raw response: {response_text}") 
+            # print(f"DEBUG - Raw response: {response_text}") 
             
             response_text = self._clean_response(response_text)
             
@@ -166,7 +163,7 @@ class RagManager:
     def _create_prompt_template(self):
         """Create structured prompt template for consistent message formatting"""
         return ChatPromptTemplate.from_messages([
-            ("system", """You are {character_name} in a murder mystery game. Respond naturally while staying in character.
+            ("system", """You are {character_name} in a murder mystery game. Respond naturally while staying in character. The tone should be that of a character in a sherlock holmes novel.
 
             Context from previous conversations:
             {context}
@@ -180,9 +177,6 @@ class RagManager:
     
     def fallback_response(self, question: Question):
         """Fallback response system"""
-        import random
-        
-        # Character-based responses
         innocent_responses = [
             "I don't know anything about that incident.",
             "I was in the library reading at that time.",
@@ -207,7 +201,6 @@ class RagManager:
         responses = murderer_responses if question.listener.murderer else innocent_responses
         response = random.choice(responses)
         
-        # Simple suspicion logic
         suspicious_questions = ["murder", "kill", "weapon", "blood", "knife", "gun", "alibi", "where were you"]
         suspicion_change = 5 if any(word in question.question.lower() for word in suspicious_questions) else random.randint(-2, 2)
         
@@ -222,13 +215,11 @@ class RagManager:
             parts = response.split("<|assistant|>", 1)
             if len(parts) > 1:
                 response = parts[1].split("<|user|>")[0].strip()
-        elif "[/INST]" in response:
-            # Mistral format  
+        elif "[/INST]" in response: 
             parts = response.split("[/INST]", 1)
             if len(parts) > 1:
                 response = parts[1].strip()
         else:
-            # Generic fallback - try multiple delimiters
             for delimiter in ["### Assistant:", "Assistant:", "\n\n"]:
                 if delimiter in response:
                     parts = response.split(delimiter, 1)
@@ -236,7 +227,6 @@ class RagManager:
                         response = parts[1].strip()
                         break
         
-        # Common cleanup for all models
         special_tokens = ["<|endoftext|>", "<s>", "</s>", "[INST]", "[/INST]", "<|system|>", "<|user|>", "<|assistant|>"]
         for token in special_tokens:
             response = response.replace(token, "")

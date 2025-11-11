@@ -4,7 +4,8 @@ from entities.Conversation import Question
 from managers.GameManager import GameManager
 import random
 
-def print_menu():
+def print_menu(player: Player):
+    print(f"Your current level of suspicion is: {player.suspicion}")
     print("press 1 to ask question: ")
     print("press 2 to accuse: ")
     print("press 3 to see players")
@@ -14,9 +15,9 @@ def print_player_list(players: list[Player], show_suspicion: bool = True):
     print("\nPlayers in the room:")
     for idx, player in enumerate(players):
         if show_suspicion:
-            print(f"{idx + 1}. {player.name} (Suspicion: {player.suspicion})")
+            print(f"{idx}. {player.name} (Suspicion: {player.suspicion})")
         else:
-            print(f"{idx + 1}. {player.name}")
+            print(f"{idx}. {player.name}")
             
 def get_player_choice(players: list[Player], action: str) -> Player:
     while True:
@@ -37,10 +38,13 @@ def register_user_player(location: Location) -> Player:
     #the user player will have id 0 and always be the first in the list in phase 1 and 2
     return Player(0, name, 0)
 
+def generate_location():
+    pass
+
 def run_game(game_manager: GameManager):
 
-    while game_manager.game_state.game_active:
-        print_menu()
+    while game_manager.game_state_manager.is_game_active():
+        print_menu(game_manager.user_player)
         choice = input("Enter your choice: ")
         if choice == "0":
             print("Quitting game.")
@@ -49,7 +53,7 @@ def run_game(game_manager: GameManager):
             
             print("Asking question...")
             print("Who to ask?: ")  
-            players = game_manager.get_other_players_in_room(game_manager.get_current_room())
+            players = game_manager.player_manager.get_other_players_in_room(game_manager.get_current_room(), game_manager.user_player)
             print_player_list(players, show_suspicion=True)
             selected_player = get_player_choice(players, "question")
             
@@ -61,7 +65,6 @@ def run_game(game_manager: GameManager):
                 question,
             )
             response, suspicion_change = game_manager.strike_conversation(conversation)
-            game_manager.conversation_history.append(conversation)
             print(f"\n{selected_player.name} says: {response}")
             if suspicion_change != 0:
                 change_text = "increased" if suspicion_change > 0 else "decreased"
@@ -70,7 +73,7 @@ def run_game(game_manager: GameManager):
         elif choice == "2":
             print("Accusing player...")
             print("Who to accuse?: ")
-            players = game_manager.get_other_players_in_room(game_manager.get_current_room())
+            players = game_manager.player_manager.get_other_players_in_room(game_manager.get_current_room(), game_manager.user_player)
             print_player_list(players, show_suspicion=True)
             accused = get_player_choice(players, "accuse")
             if game_manager.accuse_player(game_manager.user_player, accused):
@@ -81,7 +84,7 @@ def run_game(game_manager: GameManager):
                 print("Your suspicion has increased massively!")
             
         elif choice == "3":
-            players = game_manager.get_other_players_in_room(game_manager.player_tracking[game_manager.user_player])
+            players = game_manager.player_manager.get_other_players_in_room(game_manager.get_current_room(), game_manager.user_player)
             print_player_list(players, show_suspicion=True)
         else:
             print("Invalid choice, please try again.")
