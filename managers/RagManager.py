@@ -9,10 +9,16 @@ from langchain_huggingface import ChatHuggingFace
 from langchain_core.prompts import ChatPromptTemplate
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from entities.Conversation import Conversation, Question
+from entities.Location import Location
+from entities.Player import Player
+from entities.Room import Room
 
 load_dotenv()
+
 class RagManager:
     
+    # LLAMA_3B_HUGGINGFACEHUB
+    # MISTRAL_7B_HUGGINGFACEHUB
     def __init__(self, model_name: str | None = os.getenv("MISTRAL_7B_HUGGINGFACEHUB")) -> None:
         
         self.embeddings = HuggingFaceEmbeddings(
@@ -26,7 +32,7 @@ class RagManager:
         )
         
         self.llm = self._initialize_llm(model_name)
-        self.prompt_template = self._create_prompt_template()
+        self.prompt_templates = self._create_prompt_templates()
     
     def _initialize_llm(self, model_name: str | None):
         """Initialize the LLM"""
@@ -57,7 +63,7 @@ class RagManager:
             )
             
             llm = HuggingFacePipeline(pipeline=pipe)
-            chat_model = ChatHuggingFace(llm = llm)
+            chat_model = ChatHuggingFace(llm=llm)
             print(f"Model {model_name} loaded successfully!")
             return chat_model
             
@@ -81,7 +87,7 @@ class RagManager:
                 )
                 
                 llm = HuggingFacePipeline(pipeline=pipe)
-                chat_model = ChatHuggingFace(llm = llm)
+                chat_model = ChatHuggingFace(llm=llm)
                 print("Fallback model loaded successfully!")
                 return chat_model
                 
@@ -93,13 +99,13 @@ class RagManager:
     def add_conversation(self, conversation: Conversation, turn: int) -> None:
         """Store a conversation in memory"""
         doc = Document(
-                page_content=f"Question: {conversation.question}\nResponse: {conversation.response}",
-                metadata={
-                    "player_ids": f"{conversation.question.speaker.id} - {conversation.question.listener.id}",\
-                    "players": f"{conversation.question.speaker.name} - {conversation.question.listener.name}",\
-                    "turn": turn
-                    }
-                )
+            page_content=f"Question: {conversation.question.question}\nResponse: {conversation.response}",
+            metadata={
+                "player_ids": f"{conversation.question.speaker.id}-{conversation.question.listener.id}",
+                "players": f"{conversation.question.speaker.name}-{conversation.question.listener.name}",
+                "turn": turn
+            }
+        )
         self.vector_store.add_documents([doc])
         
     def get_conversation_context(self, current_question: Question, number_docs_to_retrieve: int = 3) -> str:
@@ -108,27 +114,33 @@ class RagManager:
         if self.vector_store._collection.count() == 0:
             return "No previous conversations."
         
+        # Search for conversations between these two players
+        player_filter = f"{current_question.speaker.id}-{current_question.listener.id}"
         results = self.vector_store.similarity_search(
-            f"Conversation with {current_question.speaker}: {current_question.question}",
+            f"Conversation between {current_question.speaker.name} and {current_question.listener.name}: {current_question.question}",
             k=number_docs_to_retrieve,
-            filter={"players":f"{current_question.speaker.id} - {current_question.listener.id}"}
+            filter={"player_ids": player_filter}
         )
         
-        context = "Previous conversations:\n"
+        if not results:
+            return "No previous conversations with this person."
+        
+        context = "Previous conversations with this person:\n"
         for i, doc in enumerate(results):
             context += f"{i+1}. {doc.page_content}\n"
         
         return context
 
-    def generate_response(self, current_question: Question):
-        """Generate NPC response using RAG"""
+    def generate_response(self, question: Question, location: Location, current_room: Room, nearby_players: list[Player]):
+        """Generate NPC response using RAG with proper context"""
         
         if not self.llm:
-            return self.fallback_response(current_question)
+            return self.fallback_response(question)
+        
         try:
-            context = self.get_conversation_context(current_question)
-            
-            prompt = self._create_prompt(current_question, context)
+            context = self.get_conversation_context(question)
+            template_type = self.select_appropriate_template(question)
+            prompt = self._create_prompt(question, location, current_room, context, template_type, nearby_players)
             
             response = self.llm.invoke(prompt)
             
@@ -136,41 +148,152 @@ class RagManager:
             
             response_text = self._clean_response(response_text)
             
-            suspicion_change_speaker, suspicion_change_listener = self._calculate_suspicion_change(current_question.question, response_text, current_question.listener.murderer)
+            suspicion_change_speaker, suspicion_change_listener = self._calculate_suspicion_change(
+                question.question, response_text, question.listener.murderer,
+                question.listener.lying_ability, question.listener.mood
+            )
             
-                
             return response_text, suspicion_change_speaker, suspicion_change_listener 
+            
         except Exception as exception:
             print(f"LLM generation error: {exception}")
-            return self.fallback_response(current_question)
+            return self.fallback_response(question)
     
-    def _create_prompt(self, question: Question, context: str):
-        """Create prompt for the LLM"""
-        return self.prompt_template.format_messages(
-                character_name=question.listener.name,
-                context=context,
-                suspicion_level=question.listener.suspicion,
-                role="MURDERER - be defensive and evasive" if question.listener.murderer else "INNOCENT - be helpful and cooperative",
-                question=question.question
-            )
+    def _create_prompt(self, question: Question, location: Location, current_room: Room, 
+                      context: str, template_type: str, nearby_players: list[Player]):
+        """Create appropriate prompt based on template type"""
+        
+        listener = question.listener
+        
+        # Format nearby players for context
+        nearby_players_text = ""
+        if nearby_players:
+            nearby_players_text = ", ".join([p.name for p in nearby_players if p.id != listener.id])
+        
+        # Format inventory for context (known items only)
+        known_inventory = [item for item in listener.inventory if item.known]
+        inventory_text = "None known to others"
+        if known_inventory:
+            inventory_text = ", ".join([f"{item.name} ({item.description})" for item in known_inventory])
+        
+        # Get the appropriate template
+        template = self.prompt_templates[template_type]
+        
+        # Fill the template
+        messages = template.format_messages(
+            character_name=listener.name,
+            character_job=listener.job,
+            character_mood=listener.mood,
+            location_name=location.name,
+            location_description=location.description,
+            event_description=location.event_description,
+            current_room_name=current_room.name,
+            current_room_description=current_room.description,
+            room_type=current_room.room_type,
+            nearby_players=nearby_players_text,
+            known_inventory=inventory_text,
+            context=context,
+            question=question.question,
+            role="MURDERER - be defensive, evasive, and careful about what you reveal" if listener.murderer else "INNOCENT - be helpful, cooperative, and truthful",
+            suspicion_level=listener.suspicion
+        )
+        
+        return messages
+    
+    def _create_prompt_templates(self):
+        """Create comprehensive prompt templates for different scenarios"""
+        
+        return {
+            "basic": ChatPromptTemplate.from_messages([
+                ("system", """You are {character_name}, a {character_job} attending an event at {location_name}. 
+                Location: {location_description}
+                Event: {event_description}
+                Current Room: {current_room_name} - {current_room_description}
+                Your Role: {role}
+                Your Mood: {character_mood}
+                Your Known Items: {known_inventory}
+                Nearby People: {nearby_players}
+                Suspicion Level: {suspicion_level}
 
-    def _create_prompt_template(self):
-        """Create structured prompt template for consistent message formatting"""
-        return ChatPromptTemplate.from_messages([
-            ("system", """You are {character_name} in a murder mystery game. Respond naturally while staying in character. The tone should be that of a character in a sherlock holmes novel.
+                {context}
 
-            Context from previous conversations:
-            {context}
+                IMPORTANT: Respond ONLY with your character's dialogue. Do not include any explanations, labels, or system messages.
+                Keep your responses brief (1-2 sentences). Stay consistent with your role and mood. 
+                If you're the murderer, be careful not to reveal your guilt. If innocent, try to be helpful."""),
+                                ("human", "{question}")
+                            ]),
+                            
+                            "inventory_query": ChatPromptTemplate.from_messages([
+                                ("system", """You are {character_name}, a {character_job} at {location_name}.
+                Your Role: {role}  
+                Your Mood: {character_mood}
+                Your Actual Inventory: {known_inventory}
+                Suspicion Level: {suspicion_level}
 
-            Your current suspicion level: {suspicion_level}
-            Your secret role: {role}
+                {context}
 
-            Respond naturally and briefly (1-4 sentences). Do not break character. Do not reveal you are an AI."""),
-                    ("human", "{question}")
-                ])
+                IMPORTANT: Respond ONLY with your character's dialogue about what items you have. 
+                - If you're INNOCENT: Be truthful about items others know you have. You can mention personal items freely.
+                - If you're the MURDERER: Be evasive about suspicious items. You might lie about or downplay certain items, especially weapons. 
+                - Never directly admit to having a murder weapon if you're the murderer.
+                - Keep responses natural and in character.
+                - Do not include any explanations, labels, or system messages."""),
+                                ("human", "{question}")
+                            ]),
+                            
+                            "location_aware": ChatPromptTemplate.from_messages([
+                                ("system", """You are {character_name} in the {current_room_name} at {location_name}.
+                Room Description: {current_room_description}
+                Room Type: {room_type}
+                Nearby People: {nearby_players}
+                Your Role: {role}
+                Your Job: {character_job}
+
+                {context}
+
+                Incorporate your surroundings into your response naturally. Reference the room features or other people if relevant.
+                Keep responses brief and in character."""),
+                                ("human", "{question}")
+                            ]),
+                            
+                            "suspicion_high": ChatPromptTemplate.from_messages([
+                                ("system", """You are {character_name}. People are becoming suspicious of you.
+                Your Suspicion Level: {suspicion_level}
+                Your Role: {role}
+                Your Mood: {character_mood}
+
+                {context}
+
+                You're feeling defensive due to high suspicion. Choose your words carefully.
+                - If INNOCENT: You might be frustrated or anxious about false suspicion.
+                - If MURDERER: You're becoming nervous and more careful about what you say.
+                Respond accordingly, keeping answers brief but meaningful."""),
+                                ("human", "{question}")
+                            ])
+                        }
+    
+    def select_appropriate_template(self, question: Question) -> str:
+        """Choose the most appropriate template based on conversation context"""
+        question_lower = question.question.lower()
+        
+        # High suspicion gets special handling
+        if question.listener.suspicion > 25:
+            return "suspicion_high"
+        
+        # Inventory-related questions
+        if any(word in question_lower for word in ["item", "carry", "have", "possess", "belongings", "inventory", "what do you have"]):
+            return "inventory_query"
+        
+        # Location-related questions  
+        elif any(word in question_lower for word in ["room", "place", "location", "where", "here", "this room"]):
+            return "location_aware"
+        
+        # Default template
+        else:
+            return "basic"
     
     def fallback_response(self, question: Question):
-        """Fallback response system"""
+        """Fallback response system when LLM fails"""
         innocent_responses = [
             "I don't know anything about that incident.",
             "I was in the library reading at that time.",
@@ -190,6 +313,7 @@ class RagManager:
             "I was alone in my room at that time.",
             "You should focus on finding real clues.",
             "I don't appreciate these accusations.",
+            "Perhaps you should look elsewhere for answers.",
         ]
         
         responses = murderer_responses if question.listener.murderer else innocent_responses
@@ -211,38 +335,78 @@ class RagManager:
         return response, suspicion_change_speaker, suspicion_change_listener
     
     def _clean_response(self, response: str) -> str:
-        """Model-aware cleaning function"""
+        """Clean up model response to extract only the assistant's reply"""
+        # Convert to string if needed
+        response = str(response)
         
-        # Detect model type by response format
-        if "<|assistant|>" in response:
-            # Zephyr format
-            parts = response.split("<|assistant|>", 1)
-            if len(parts) > 1:
-                response = parts[1].split("<|user|>")[0].strip()
-        elif "[/INST]" in response: 
-            parts = response.split("[/INST]", 1)
-            if len(parts) > 1:
-                response = parts[1].strip()
-        else:
-            for delimiter in ["### Assistant:", "Assistant:", "\n\n"]:
-                if delimiter in response:
-                    parts = response.split(delimiter, 1)
+        # First, try to extract response after common assistant markers
+        assistant_markers = [
+            "Assistant:", "### Assistant:", "<|assistant|>", 
+            "[/INST]", "### Response:", "Response:"
+        ]
+        
+        for marker in assistant_markers:
+            if marker in response:
+                parts = response.split(marker, 1)
+                if len(parts) > 1:
+                    response = parts[1].strip()
+                    break
+        
+        # If we still have the full prompt, try to extract just the last part after the human question
+        if "Human:" in response or "human" in response.lower():
+            # Split by the question and take what comes after
+            question_markers = ["Human:", "human:", "Question:", "### Human:"]
+            for marker in question_markers:
+                if marker in response:
+                    parts = response.rsplit(marker, 1)
                     if len(parts) > 1:
+                        # Take everything after the last occurrence of the human marker
                         response = parts[1].strip()
                         break
         
-        special_tokens = ["<|endoftext|>", "<s>", "</s>", "[INST]", "[/INST]", "<|system|>", "<|user|>", "<|assistant|>"]
+        # Remove any remaining special tokens
+        special_tokens = [
+            "<|endoftext|>", "<s>", "</s>", "[INST]", "[/INST]", 
+            "<|system|>", "<|user|>", "<|assistant|>", "### System:",
+            "System:", "### Human:", "Human:", "### Instruction:"
+        ]
         for token in special_tokens:
             response = response.replace(token, "")
         
-        response = response.strip('"\' \n')
+        # Remove any prompt template fragments that might have been included
+        prompt_fragments = [
+            "Respond in character", "Keep responses brief", "Stay consistent",
+            "Your Role:", "Location:", "Current Room:", "Your Mood:"
+        ]
         
+        # Split by newlines and filter out lines that contain prompt instructions
+        lines = response.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            if line and not any(fragment in line for fragment in prompt_fragments):
+                cleaned_lines.append(line)
+        
+        response = ' '.join(cleaned_lines)
+        
+        # Final cleanup
+        response = response.strip('"\' \n\t')
+        
+        # If the response is empty or too short after cleaning, use fallback
         if not response or len(response) < 5:
             return "I'm not sure how to respond to that."
         
+        # Ensure the response doesn't start with the question
+        if "?" in response and response.find("?") < len(response) // 3:
+            # Likely includes the question, try to extract after the last question mark
+            parts = response.rsplit("?", 1)
+            if len(parts) > 1:
+                response = parts[1].strip()
+        
         return response
     
-    def _calculate_suspicion_change(self, question: str, response: str, is_murderer: bool) -> tuple[int, int]:
+    def _calculate_suspicion_change(self, question: str, response: str, is_murderer: bool, 
+                                  lying_ability: int, mood: str) -> tuple[int, int]:
         """Calculate suspicion change based on question and response"""
         suspicious_keywords = ["murder", "kill", "weapon", "blood", "alibi", "guilty", "crime", "dead", "body"]
         defensive_keywords = ["none of your business", "stop asking", "accusation", "wrong person", "not your concern"]
@@ -254,8 +418,15 @@ class RagManager:
         question_lower = question.lower()
         if any(keyword in question_lower for keyword in suspicious_keywords):
             suspicion_change_speaker += 2
-            # TODO: Implement a mood system. If the murderer has a negative mood because of the question their suspicion increases. The murderer may be a good liar or the question might not be inflmmatory decided by the mood system.
-        
+            if is_murderer:
+                # Good liars (high lying_ability) don't get as suspicious from direct questions
+                if lying_ability > 7 and mood not in ["defensive", "angry"]:
+                    suspicion_change_listener += 3
+                else:
+                    suspicion_change_listener += 1
+            else:
+                suspicion_change_listener += 1
+                
         response_lower = response.lower()
         if any(keyword in response_lower for keyword in defensive_keywords):
             suspicion_change_listener += 3
@@ -268,8 +439,13 @@ class RagManager:
         if is_murderer and any(keyword in question_lower for keyword in suspicious_keywords):
             suspicion_change_listener += 2
             
+        # Mood adjustments
+        if mood == "defensive":
+            suspicion_change_listener += 1
+        elif mood == "cooperative":
+            suspicion_change_listener -= 1
+            
         suspicion_change_speaker = max(min(suspicion_change_speaker, 5), -5)
         suspicion_change_listener = max(min(suspicion_change_listener, 8), -3)
         
         return suspicion_change_speaker, suspicion_change_listener
- 

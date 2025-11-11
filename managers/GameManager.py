@@ -17,7 +17,7 @@ class GameManager:
         self.player_manager = PlayerManager()
         self.game_state_manager = GameStateManager(max_turns, suspicion_limit)
         self.rag_manager = RagManager()
-        self.conversation_manager = ConversationManager(self.rag_manager, self.game_state_manager)
+        self.conversation_manager = ConversationManager(self.rag_manager, self.game_state_manager, self.player_manager, self.location)
         self.accusation_manager = AccusationManager(self.game_state_manager)
         
         self.initialize_game()
@@ -26,22 +26,27 @@ class GameManager:
         """Place all players in the starting room """
         self.player_manager.setup_players(self.location, self.user_player)
         self.player_manager.select_murderer()
+        
+    def advance_turn_with_npc_movement(self) -> None:
+        """Advance turn and move NPCs"""
+        self.game_state_manager.advance_turn()
+        self.player_manager.move_npcs_randomly(self.location)
     
     def move_player(self, player: Player, room: Room) -> None:
         self.player_manager.move_player_to_room(player, room)
         if player is self.user_player:
-            self.game_state_manager.advance_turn()
+            self.advance_turn_with_npc_movement()
     
     def strike_conversation(self, question: Question) -> tuple[str, int, int]:
         response, suspicion_change_speaker, suspicion_change_listener = self.conversation_manager.strike_conversation(question)
-        self.game_state_manager.advance_turn()
+        self.advance_turn_with_npc_movement()
         return response, suspicion_change_speaker, suspicion_change_listener
     
     def accuse_player(self, accuser: Player, accused: Player) -> bool:
         result = self.accusation_manager.accuse_player(accuser, accused)
         if result is True:
             self.game_state_manager.end_game(win_condition=True)
-        return True
+        return result
 
     def get_rooms(self) -> list[Room]:
         return list(self.location.rooms)

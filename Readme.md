@@ -13,11 +13,18 @@ In the first phase the user should be able to converse with the other players (t
 
 ## Second development phase - CURRENTLY IN DEVELOPMENT...
 
-In the second dev phase I want the player to be able to move between rooms and strike up conversations. Locations, and players will be randomly picked names. Players will also move around randomly. The Rag system should be implemented to handle remembering the game states and manage the conversations, as well as the positions of the players. The Rag should also help generate a location and a description that it then remembers and uses further in conversations. Each player will have an inventory of randomly selected items. The murderer will have in their inventory the murder weapon. A new option will be available to ask about inventory.
+In the second dev phase I want the player to be able to move between rooms and strike up conversations. Locations, and players will be randomly picked names. Players will also move around randomly. The Rag system should be implemented to handle remembering the game states and manage the conversations, as well as the positions of the players. The Rag should also help generate a location and a description that it then remembers and uses further in conversations. Each player will have an inventory of randomly selected items. The murderer will have in their inventory the murder weapon. A new option will be available to ask about inventory. Each player will be randomly assigned a Job. All of this data will be provided to the LLM through RAG so it can generate better responses.
+
+- for the phase 2 mood system implement mood changes
+- Add the ability of the user to see who discovered inventories and items
+- Add the ability for the user to see another players's job
+- Add the ability for the user to see their own inventory
 
 ## Third development phase
 
-In the third phase the application should load player and location data from one or more JSON or YAML documents and ellaborate based on the minimal data existing in the model classes e.g. Location("Haunted house", "spooky house full of ghosts") will become a paragraph about the fictive history of the house and why is it haunted. Same with the players and their jobs. Conversations should flow better at this point, due to more data being given to the LLM through RAG. Similar behaviour will happen with the rooms of the location, the ai will develop the name of the room based on a small name and description and remember it. At the end of this phase the RAG should be able to generate descriptions for players, rooms and the location, and a short narration of the event during an initial loading phase.
+In the third phase the application should load player and location data from one or more JSON or YAML documents and ellaborate based on the minimal data existing in the model classes e.g. Location("Haunted house", "spooky house full of ghosts") will become a paragraph about the fictive history of the house and why is it haunted. Same with the players and their jobs. Conversations should flow better at this point, due to more data being given to the LLM through RAG. Similar behaviour will happen with the rooms of the location, the ai will develop the name of the room based on a small name and description and remember it. At the end of this phase the RAG should be able to generate descriptions for players, rooms and the location, and a short narration of the event during an initial loading phase. The Rag should also get a piece of the state of the game and make the murderer more frantic as the turns approach the limit.
+
+- Some rooms should be static in every map and random rooms will tie to them to establish structure
 
 ## Fourth development phase
 
