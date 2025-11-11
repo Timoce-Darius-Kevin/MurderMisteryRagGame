@@ -26,7 +26,6 @@ class PlayerManager:
             random_room = random.choice(location.rooms)
             self.add_player(new_player, random_room)
         
-        self.select_murderer()
         self._assign_inventories()
 
     def _assign_inventories(self) -> None:
