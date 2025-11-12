@@ -414,6 +414,8 @@ class RagManager:
                     suspicion_change_listener += 1
             else:
                 suspicion_change_listener += 1
+            
+            
                 
         response_lower = response.lower()
         if any(keyword in response_lower for keyword in defensive_keywords):
@@ -427,10 +429,13 @@ class RagManager:
         if is_murderer and any(keyword in question_lower for keyword in suspicious_keywords):
             suspicion_change_listener += 2
             
-        if mood == "defensive":
+        # mood will affect suspicon by itself
+        if mood == "angry":
+            suspicion_change_listener += 2
+        elif mood == "defensive":
             suspicion_change_listener += 1
         elif mood == "cooperative":
-            suspicion_change_listener -= 1
+            suspicion_change_speaker -= 1
             
         suspicion_change_speaker = max(min(suspicion_change_speaker, 5), -5)
         suspicion_change_listener = max(min(suspicion_change_listener, 8), -3)

@@ -25,4 +25,12 @@ class ConversationManager:
         self.rag_manager.add_conversation(conversation, self.game_state.current_turn)
         question.listener.suspicion += suspicion_change_listener
         question.speaker.suspicion += suspicion_change_speaker
+        
+        question.listener.change_mood_based_on_conversation(
+            question.question, response_text, suspicion_change_listener
+        )
+        question.speaker.change_mood_based_on_conversation(
+            question.question, response_text, suspicion_change_speaker
+        )
+        
         return response_text, suspicion_change_speaker, suspicion_change_listener
