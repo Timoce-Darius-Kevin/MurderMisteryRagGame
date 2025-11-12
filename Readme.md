@@ -19,12 +19,16 @@ In the second dev phase I want the player to be able to move between rooms and s
 - Add the ability of the user to see who discovered inventories and items
 - Add the ability for the user to see another players's job
 - Add the ability for the user to see their own inventory
+- Add the ability for the user to view a player, see their discovered items
 
 ## Third development phase
 
 In the third phase the application should load player and location data from one or more JSON or YAML documents and ellaborate based on the minimal data existing in the model classes e.g. Location("Haunted house", "spooky house full of ghosts") will become a paragraph about the fictive history of the house and why is it haunted. Same with the players and their jobs. Conversations should flow better at this point, due to more data being given to the LLM through RAG. Similar behaviour will happen with the rooms of the location, the ai will develop the name of the room based on a small name and description and remember it. At the end of this phase the RAG should be able to generate descriptions for players, rooms and the location, and a short narration of the event during an initial loading phase. The Rag should also get a piece of the state of the game and make the murderer more frantic as the turns approach the limit.
 
 - Some rooms should be static in every map and random rooms will tie to them to establish structure
+- Item discovery tracking tools
+- Conversation pattern analysis tools
+- Suspicion calculation tools
 
 ## Fourth development phase
 

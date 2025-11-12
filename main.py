@@ -1,220 +1,675 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, scrolledtext
+import threading
+import time
+import queue
 from entities.Player import Player
 from entities.Location import Location
 from entities.Conversation import Question
 from entities.Room import Room
 from managers.GameManager import GameManager
-import random
+from game_logic import generate_location, register_user_player, ask_about_inventory
 
-def print_menu(player: Player, current_room: Room):
-    print(f"You are in the {current_room.name}\n")
-    print(f"{current_room.description}\n\n")
-    print(f"Your current level of suspicion is: {player.suspicion}")
-    print("1. Ask question")
-    print("2. Accuse player") 
-    print("3. See players in this room")
-    print("4. Move to another room")
-    print("5. Ask about inventory")
-    print("0. Quit game")
-    
-def ask_about_inventory(game_manager: GameManager, selected_player: Player):
-    """Ask a player about their inventory"""
-    question = Question(
-        game_manager.user_player,
-        selected_player,
-        "What items are you carrying?"
-    )
-    response, suspicion_change_speaker, suspicion_change_listener = game_manager.strike_conversation(question)
-    print(f"\n{selected_player.name} says: {response}")
-    if suspicion_change_speaker != 0 or suspicion_change_listener != 0:
-        print("\nSuspicion changes:")
-        if suspicion_change_speaker != 0:
-            change_text = "increased" if suspicion_change_speaker > 0 else "decreased"
-            print(f"  Your suspicion {change_text} by {abs(suspicion_change_speaker)}")
-        if suspicion_change_listener != 0:
-            change_text = "increased" if suspicion_change_listener > 0 else "decreased"
-            print(f"  {selected_player.name}'s suspicion {change_text} by {abs(suspicion_change_listener)}")
-    
-def print_player_list(players: list[Player], show_suspicion: bool = True):
-    print("\nPlayers in the room:")
-    for idx, player in enumerate(players):
-        if show_suspicion:
-            print(f"{idx}. {player.name} (Suspicion: {player.suspicion})")
-        else:
-            print(f"{idx}. {player.name}")
 
-def print_room_list(rooms: list[Room]):
-    print("\nRooms:")
-    for idx, room in enumerate(rooms):
-        print(f"{idx}. {room.name}")
-            
-def get_player_choice(players: list[Player], action: str) -> Player:
-    while True:
+class LoadingIndicator:
+    """A Tkinter loading indicator similar to tqdm"""
+    
+    def __init__(self, parent, text="Thinking..."):
+        self.parent = parent
+        self.text = text
+        self.is_running = False
+        self.dots_count = 0
+        
+        # Create loading window
+        self.loading_window = tk.Toplevel(parent)
+        self.loading_window.title("Processing")
+        self.loading_window.geometry("300x120")
+        self.loading_window.transient(parent)
+        self.loading_window.grab_set()
+        
+        # Center the loading window
+        self.loading_window.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() - 300) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - 120) // 2
+        self.loading_window.geometry(f"+{x}+{y}")
+        
+        # Make it non-resizable
+        self.loading_window.resizable(False, False)
+        
+        self.setup_ui()
+        
+    def setup_ui(self):
+        """Create the loading indicator UI"""
+        # Main frame
+        main_frame = tk.Frame(self.loading_window, padx=20, pady=20)
+        main_frame.pack(expand=True, fill='both')
+        
+        # Loading text
+        self.text_label = tk.Label(
+            main_frame,
+            text=self.text,
+            font=('Arial', 11),
+            fg='#2c3e50'
+        )
+        self.text_label.pack(pady=(0, 15))
+        
+        # Progress bar
+        self.progress = ttk.Progressbar(
+            main_frame,
+            mode='indeterminate',
+            length=250,
+        )
+        self.progress.pack(pady=5)
+        
+        # Dots animation
+        self.dots_label = tk.Label(
+            main_frame,
+            text="",
+            font=('Arial', 10),
+            fg='#7f8c8d'
+        )
+        self.dots_label.pack(pady=5)
+        
+    def start(self):
+        """Start the loading indicator"""
+        self.is_running = True
+        self.dots_count = 0
+        self.loading_window.deiconify()
+        self.progress.start(10)
+        self.animate_dots()
+        
+    def animate_dots(self):
+        """Animate the dots for loading effect"""
+        if self.is_running:
+            self.dots_count = (self.dots_count + 1) % 4
+            dots = "." * self.dots_count
+            self.dots_label.config(text=dots)
+            self.loading_window.after(500, self.animate_dots)
+        
+    def stop(self):
+        """Stop and close the loading indicator"""
+        self.is_running = False
         try:
-            choice = int(input(f"Select player to {action} (0-{len(players)-1}): "))
-            if 0 <= choice < len(players):
-                return players[choice]
-            else:
-                print("Invalid choice. Try again.")
-        except ValueError:
-            print("Please enter a number.")
-            
-def get_room_choice(rooms: list[Room]) -> Room:
-    while True:
+            self.progress.stop()
+        except tk.TclError:
+            # Progress bar already destroyed, ignore error
+            pass
         try:
-            choice = int(input(f"Select room to move to (0-{len(rooms)-1}): "))
-            if 0 <= choice < len(rooms):
-                return rooms[choice]
-            else:
-                print("Invalid choice. Try again.")
-        except ValueError:
-            print("Please enter a number.")
+            if self.loading_window.winfo_exists():
+                self.loading_window.destroy()
+        except tk.TclError:
+            # Window already destroyed, ignore error
+            pass
 
 
-def register_user_player(location: Location) -> Player:
-    print(f"Welcome to {location.name}")
-    print(f"{location.description}\n")
-    name = input("What do you wish to be called?\n:> ")
-    #the user player will have id 0 and always be the first in the list in phase 1 and 2
-    return Player(0, name, 0)
-
-def generate_location() -> Location:
-    location_names_with_descriptions = {
-        "Haunted Manor": "An old manor at the edge of the city, surrounded by dead trees with pre-victorian furniture. While the outside looks fairly unkempt the inside is clean and luxurious.",
-        "Ravenswood Manor": "A gothic mansion shrouded in mist, with towering spires and ivy-covered walls that seem to whisper secrets of the past.",
-        "Blackwood Estate": "A sprawling estate with a dark history, where the wealthy and powerful once gathered for decadent parties that often ended in tragedy."
-    }
+class ConversationWorker:
+    """Handles conversation processing in background threads"""
     
-    event_descriptions = [
-        "You were called here by a friend for a masked ball. When you get here, you find commotion, and a man has been killed. You must find out what has happened and who did it.",
-        "A storm has trapped you and other guests in this remote manor. During the night, one of the guests was murdered. The killer must be among you.",
-        "You arrived for what was supposed to be a weekend retreat, but found the host dead in the library. Now everyone is a suspect and no one can leave until the storm passes."
-    ]
-    
-    possible_rooms = [
-        # Main Floor Rooms
-        Room("Grand Entrance Hall", "A magnificent marble-floored hall with a sweeping staircase. Portraits of stern-faced ancestors line the walls, their eyes seeming to follow your every move.", random.randint(8, 15)),
-        Room("Ballroom", "An opulent ballroom with crystal chandeliers and polished oak floors. Faded banners hang from the ceiling, and a grand piano sits silent in the corner.", random.randint(10, 20)),
-        Room("Library", "Floor-to-ceiling bookshelves filled with leather-bound tomes. A ladder slides along a brass rail, and the scent of old paper and leather fills the air.", random.randint(4, 8)),
-        Room("Dining Hall", "A long mahogany table set for twenty with fine china and silver candelabras. The remains of an abandoned meal suggest the party was interrupted suddenly.", random.randint(8, 12)),
-        Room("Conservatory", "A glass-walled room filled with exotic plants, some withered and dying. The humid air carries the scent of earth and decay.", random.randint(5, 10)),
-        Room("Study", "A cozy room with a large oak desk, green leather chairs, and a dying fire in the hearth. Papers are scattered about as if someone left in a hurry.", random.randint(3, 6)),
-        Room("Smoking Room", "A masculine room with dark wood paneling and leather armchairs. The air is thick with the lingering scent of cigar smoke and brandy.", random.randint(4, 8)),
+    def __init__(self, game_manager, conversation, player, question_text):
+        self.game_manager = game_manager
+        self.conversation = conversation
+        self.player = player
+        self.question_text = question_text
+        self.result_queue = queue.Queue()
         
-        # Upper Floor Rooms
-        Room("Master Bedroom", "An extravagant bedroom with a four-poster bed and velvet drapes. A vanity table is covered in perfume bottles and jewelry boxes.", random.randint(3, 6)),
-        Room("Guest Bedroom (East)", "A comfortable room with floral wallpaper and a bay window overlooking the gardens. The bed is neatly made, untouched.", random.randint(2, 4)),
-        Room("Guest Bedroom (West)", "This room shows signs of recent occupation - clothes are strewn about and the bed is unmade. A half-packed suitcase lies open.", random.randint(2, 4)),
-        Room("Gallery", "A long hallway displaying paintings of landscapes and portraits. One painting hangs crookedly, as if recently disturbed.", random.randint(6, 12)),
-        
-        # Service Areas
-        Room("Kitchen", "A large, industrial kitchen with copper pots hanging from the ceiling. The air smells of herbs and recently baked bread.", random.randint(4, 8)),
-        Room("Butler's Pantry", "A small room between kitchen and dining hall, filled with silverware, linens, and serving dishes neatly arranged.", random.randint(2, 4)),
-        Room("Wine Cellar", "A cold, stone-walled room filled with racks of dusty wine bottles. The air is damp and carries the scent of oak and fermentation.", random.randint(3, 6)),
-        
-        # Outdoor Areas
-        Room("Rose Garden", "A formal garden with manicured hedges and rose bushes, though many have withered. Marble statues stand guard along the pathways.", random.randint(6, 15)),
-        Room("Maze Garden", "A labyrinth of tall hedges that seems to shift and change. The sound of footsteps echoes, but you can never see who makes them.", random.randint(5, 12)),
-        Room("Fountain Courtyard", "A central courtyard with a moss-covered marble fountain. The water has stopped flowing, leaving the basin filled with murky water.", random.randint(8, 18)),
-        
-        # Special Rooms
-        Room("Observatory", "A circular room at the top of the manor with a domed glass ceiling. Astronomical charts and telescopes suggest an interest in the stars.", random.randint(3, 6)),
-        Room("Music Room", "Filled with various instruments - a grand piano, several violins, and a harp covered in a dusty cloth. Sheet music is scattered on stands.", random.randint(4, 8)),
-        Room("Trophy Room", "Mounted animal heads line the walls, their glass eyes staring blankly. Hunting rifles are displayed in a locked glass case.", random.randint(4, 8))
-    ]
-    
-    real_location_name, real_location_description = random.choice(list(location_names_with_descriptions.items()))
-    location_event = random.choice(event_descriptions)
-    
-    selected_rooms = random.sample(possible_rooms, random.randint(6, 10))
-    
-    location = Location(real_location_name, real_location_description, 10, location_event, selected_rooms)
-    return location
+    def process_conversation(self):
+        """Process conversation in background thread"""
+        try:
+            # Simulate some processing time for realism
+            time.sleep(1)
+            response, sus_speaker, sus_listener = self.game_manager.strike_conversation(self.conversation)
+            self.result_queue.put(('success', response, sus_speaker, sus_listener, self.player, self.question_text))
+        except Exception as e:
+            self.result_queue.put(('error', str(e), 0, 0, self.player, self.question_text))
 
-def run_game(game_manager: GameManager):
 
-    while game_manager.game_state_manager.is_game_active():
-        print_menu(game_manager.user_player, game_manager.get_current_room())
-        choice = input("Enter your choice: ")
-        if choice == "0":
-            print("Quitting game.")
-            break
-        elif choice == "1":
-            
-            print("Asking question...")
-            print("Who to ask?: ")  
-            players = game_manager.player_manager.get_other_players_in_room(game_manager.get_current_room(), game_manager.user_player)
-            print_player_list(players, show_suspicion=True)
-            if players == []:
-                print("No one is near you, move to another room")
-                continue
-            selected_player = get_player_choice(players, "question")
-            
-            question = input("Enter your question:> ")
-            
-            conversation: Question = Question(
-                game_manager.user_player,
-                selected_player,
-                question,
+class InventoryWorker:
+    """Handles inventory questions in background threads"""
+    
+    def __init__(self, game_manager, player):
+        self.game_manager = game_manager
+        self.player = player
+        self.result_queue = queue.Queue()
+        
+    def process_inventory(self):
+        """Process inventory question in background thread"""
+        try:
+            # Simulate some processing time for realism
+            time.sleep(1)
+            result = ask_about_inventory(self.game_manager, self.player)
+            self.result_queue.put(('success', result, self.player))
+        except Exception as e:
+            self.result_queue.put(('error', str(e), self.player))
+
+
+class WelcomeScreen:
+    """Welcome screen for player registration"""
+    
+    def __init__(self, root, on_game_start):
+        self.root = root
+        self.on_game_start = on_game_start
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Create the welcome screen UI"""
+        welcome_frame = tk.Frame(self.root, bg='#2c3e50', padx=20, pady=20)
+        welcome_frame.pack(expand=True, fill='both')
+        
+        # Title
+        title_label = tk.Label(
+            welcome_frame, 
+            text="MURDER MYSTERY GAME", 
+            font=('Arial', 24, 'bold'),
+            fg='#e74c3c',
+            bg='#2c3e50'
+        )
+        title_label.pack(pady=20)
+        
+        # Introduction text
+        intro_text = tk.Label(
+            welcome_frame,
+            text="Welcome to the Murder Mystery Game!\n\nA crime has been committed and you must uncover the truth.\nInterview suspects, gather clues, and solve the mystery before it's too late!",
+            font=('Arial', 12),
+            fg='#ecf0f1',
+            bg='#2c3e50',
+            justify='center'
+        )
+        intro_text.pack(pady=20)
+        
+        # Name entry
+        name_frame = tk.Frame(welcome_frame, bg='#2c3e50')
+        name_frame.pack(pady=20)
+        
+        tk.Label(
+            name_frame,
+            text="Enter your name:",
+            font=('Arial', 12, 'bold'),
+            fg='#ecf0f1',
+            bg='#2c3e50'
+        ).pack()
+        
+        self.name_entry = tk.Entry(
+            name_frame,
+            font=('Arial', 12),
+            width=30
+        )
+        self.name_entry.pack(pady=10)
+        self.name_entry.focus()
+        self.name_entry.bind('<Return>', lambda e: self.start_game())
+        
+        # Start button
+        start_btn = tk.Button(
+            welcome_frame,
+            text="BEGIN INVESTIGATION",
+            font=('Arial', 14, 'bold'),
+            bg='#27ae60',
+            fg='white',
+            command=self.start_game,
+            padx=20,
+            pady=10
+        )
+        start_btn.pack(pady=20)
+    
+    def start_game(self):
+        """Start the game with the provided player name"""
+        player_name = self.name_entry.get().strip()
+        if not player_name:
+            messagebox.showwarning("Input Required", "Please enter your name to begin.")
+            return
+        
+        # Destroy welcome screen and call the game start callback
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        
+        self.on_game_start(player_name)
+
+
+class GameScreen:
+    """Main game screen with all game functionality"""
+    
+    def __init__(self, root, player_name):
+        self.root = root
+        self.player_name = player_name
+        
+        # Initialize game state in constructor
+        self.location = generate_location()
+        self.user_player = register_user_player(self.location, player_name)
+        self.game_manager = GameManager(self.location, self.user_player)
+        
+        # UI state - initialize with empty/default values
+        self.current_action = ""
+        self.loading_indicator = None
+        self.current_worker = ConversationWorker(
+            self.game_manager, 
+            Question(self.user_player, self.user_player, ""),  # Default conversation
+            self.user_player, 
+            ""
+        )
+        
+        self.setup_ui()
+        self.update_display()
+        
+        # Welcome message
+        self.log_message(f"🕵️ Welcome, {player_name}!", '#3498db')
+        self.log_message(f"📍 You are at {self.location.name}", '#f39c12')
+        self.log_message(f"📖 {self.location.event_description}", '#ecf0f1')
+        self.log_message("🔍 Investigate the murder by questioning suspects and gathering clues!", '#27ae60')
+    
+    def setup_ui(self):
+        """Create the main game interface"""
+        # Main container
+        main_container = tk.Frame(self.root, bg='#2c3e50')
+        main_container.pack(expand=True, fill='both', padx=10, pady=10)
+        
+        # Top section - Location and suspicion
+        top_frame = tk.Frame(main_container, bg='#34495e', relief='raised', bd=2)
+        top_frame.pack(fill='x', pady=(0, 10))
+        
+        self.location_label = tk.Label(
+            top_frame,
+            font=('Arial', 14, 'bold'),
+            fg='#f39c12',
+            bg='#34495e',
+            justify='left'
+        )
+        self.location_label.pack(anchor='w', padx=10, pady=5)
+        
+        self.suspicion_label = tk.Label(
+            top_frame,
+            font=('Arial', 12, 'bold'),
+            fg='#e74c3c',
+            bg='#34495e'
+        )
+        self.suspicion_label.pack(anchor='w', padx=10, pady=(0, 5))
+        
+        # Middle section - Action buttons and output
+        middle_frame = tk.Frame(main_container, bg='#2c3e50')
+        middle_frame.pack(fill='both', expand=True)
+        
+        # Left panel - Actions
+        action_frame = tk.LabelFrame(
+            middle_frame, 
+            text="Investigation Actions", 
+            font=('Arial', 12, 'bold'),
+            fg='#ecf0f1',
+            bg='#2c3e50',
+            bd=2
+        )
+        action_frame.pack(side='left', fill='y', padx=(0, 10))
+        
+        # Action buttons
+        actions = [
+            ("🔍 Ask Question", self.ask_question),
+            ("⚖️ Accuse Player", self.accuse_player),
+            ("👥 See Players in Room", self.see_players),
+            ("🚪 Move to Another Room", self.move_room),
+            ("💼 Ask About Inventory", self.ask_inventory),
+            ("❌ Quit Game", self.quit_game)
+        ]
+        
+        for text, command in actions:
+            btn = tk.Button(
+                action_frame,
+                text=text,
+                font=('Arial', 11),
+                bg='#3498db',
+                fg='white',
+                command=command,
+                width=20,
+                anchor='w',
+                padx=10
             )
-            response, suspicion_change_speaker, suspicion_change_listener = game_manager.strike_conversation(conversation)
-            print(f"\n{selected_player.name} says: {response}")
-            if suspicion_change_speaker != 0 or suspicion_change_listener != 0:
-                print("\nSuspicion changes:")
-                if suspicion_change_speaker != 0:
-                    change_text = "increased" if suspicion_change_speaker > 0 else "decreased"
-                    print(f"  Your suspicion {change_text} by {abs(suspicion_change_speaker)}")
-                if suspicion_change_listener != 0:
-                    change_text = "increased" if suspicion_change_listener > 0 else "decreased"
-                    print(f"  {selected_player.name}'s suspicion {change_text} by {abs(suspicion_change_listener)}")
-                            
-        elif choice == "2":
-            print("Accusing player...")
-            print("Who to accuse?: ")
-            players = game_manager.player_manager.get_other_players_in_room(game_manager.get_current_room(), game_manager.user_player)
-            if players == []:
-                print("No one is near you, move to another room")
-                continue
-            print_player_list(players, show_suspicion=True)
-            accused = get_player_choice(players, "accuse")
-            if game_manager.accuse_player(game_manager.user_player, accused):
-                print(f"Correct! {accused.name} was the murderer!")
-                print("You solved the mystery!")
-            else:
-                print(f"Wrong accusation! {accused.name} is not the murderer.")
-                print("Your suspicion has increased massively!")
-            
-        elif choice == "3":
-            players = game_manager.player_manager.get_other_players_in_room(game_manager.get_current_room(), game_manager.user_player)
-            if players == []:
-                print("No one is near you, move to another room")
-                continue
-            print_player_list(players, show_suspicion=True)
+            btn.pack(fill='x', pady=5, padx=5)
         
-        elif choice == "4":
-            print("Moving to another room")
-            rooms = game_manager.get_rooms()
-            print_room_list(rooms)
-            room_choice = get_room_choice(rooms)
-            game_manager.move_player(game_manager.user_player, room_choice)
+        # Right panel - Game output
+        output_frame = tk.LabelFrame(
+            middle_frame,
+            text="Game Log",
+            font=('Arial', 12, 'bold'),
+            fg='#ecf0f1',
+            bg='#2c3e50',
+            bd=2
+        )
+        output_frame.pack(side='right', fill='both', expand=True)
+        
+        self.output_text = scrolledtext.ScrolledText(
+            output_frame,
+            wrap=tk.WORD,
+            font=('Arial', 10),
+            bg='#1a1a1a',
+            fg='#00ff00',
+            width=60,
+            height=20
+        )
+        self.output_text.pack(fill='both', expand=True, padx=5, pady=5)
+        self.output_text.config(state=tk.DISABLED)
+        
+        # Bottom section - Current action
+        self.action_frame = tk.Frame(main_container, bg='#34495e', relief='sunken', bd=1)
+        self.action_frame.pack(fill='x', pady=(10, 0))
+        
+        self.action_label = tk.Label(
+            self.action_frame,
+            text="Select an action to begin...",
+            font=('Arial', 11),
+            fg='#bdc3c7',
+            bg='#34495e'
+        )
+        self.action_label.pack(pady=5)
+    
+    def update_display(self):
+        """Update the game display with current state"""
+        current_room = self.game_manager.get_current_room()
+        
+        # Update location info
+        location_text = f"📍 {current_room.name}\n{current_room.description}"
+        self.location_label.config(text=location_text)
+        
+        # Update suspicion
+        suspicion_text = f"🕵️ Your Suspicion Level: {self.user_player.suspicion}/100"
+        self.suspicion_label.config(text=suspicion_text)
+        
+        # Clear action frame
+        for widget in self.action_frame.winfo_children():
+            if widget != self.action_label:
+                widget.destroy()
+    
+    def log_message(self, message, color='#00ff00'):
+        """Add a message to the game log"""
+        self.output_text.config(state=tk.NORMAL)
+        self.output_text.insert(tk.END, f"{message}\n")
+        self.output_text.config(state=tk.DISABLED)
+        self.output_text.see(tk.END)
+    
+    def show_loading(self, text="Thinking..."):
+        """Show loading indicator"""
+        if self.loading_indicator is None:
+            self.loading_indicator = LoadingIndicator(self.root, text)
+        self.loading_indicator.start()
+    
+    def hide_loading(self):
+        """Hide loading indicator"""
+        if self.loading_indicator:
+            self.loading_indicator.stop()
+            self.loading_indicator = None
+    
+    def ask_question(self):
+        """Handle asking questions to players"""
+        players = self.game_manager.player_manager.get_other_players_in_room(
+            self.game_manager.get_current_room(), self.user_player
+        )
+        
+        if not players:
+            self.log_message("❌ No one is near you. Move to another room to find suspects.", '#e74c3c')
+            return
             
-        elif choice == "5":
-            print("Ask about inventory...")
-            print("Who to ask?: ")
-            players = game_manager.get_other_players_in_current_room()
-            if players == []:
-                print("No one is near you, move to another room")
-                continue
-            print_player_list(players, show_suspicion=True)
-            selected_player = get_player_choice(players, "ask about inventory")
-            ask_about_inventory(game_manager, selected_player)
+        self.current_action = "ask_question"
+        self.show_player_selection(players, "Ask a question to:")
+    
+    def accuse_player(self):
+        """Handle accusing players"""
+        players = self.game_manager.player_manager.get_other_players_in_room(
+            self.game_manager.get_current_room(), self.user_player
+        )
+        
+        if not players:
+            self.log_message("❌ No one is near you. Move to another room to find suspects.", '#e74c3c')
+            return
+            
+        self.current_action = "accuse"
+        self.show_player_selection(players, "Accuse someone of murder:")
+    
+    def ask_inventory(self):
+        """Handle asking about inventory"""
+        players = self.game_manager.get_other_players_in_current_room()
+        
+        if not players:
+            self.log_message("❌ No one is near you. Move to another room to find suspects.", '#e74c3c')
+            return
+            
+        self.current_action = "inventory"
+        self.show_player_selection(players, "Ask about inventory:")
+    
+    def show_player_selection(self, players, title):
+        """Show player selection interface"""
+        self.action_label.config(text=title)
+        
+        for idx, player in enumerate(players):
+            btn = tk.Button(
+                self.action_frame,
+                text=f"👤 {player.name} (Suspicion: {player.suspicion})",
+                font=('Arial', 10),
+                bg='#8e44ad',
+                fg='white',
+                command=lambda p=player: self.handle_player_selection(p),
+                padx=10
+            )
+            btn.pack(side='left', padx=5, pady=5)
+    
+    def handle_player_selection(self, player):
+        """Handle when a player is selected for an action"""
+        if self.current_action == "ask_question":
+            self.ask_question_to_player(player)
+        elif self.current_action == "accuse":
+            self.make_accusation(player)
+        elif self.current_action == "inventory":
+            self.handle_inventory_question(player)
+    
+    def ask_question_to_player(self, player):
+        """Show interface for asking a specific question"""
+        self.action_label.config(text=f"Ask {player.name} a question:")
+        
+        # Question entry
+        question_frame = tk.Frame(self.action_frame, bg='#34495e')
+        question_frame.pack(fill='x', padx=10, pady=5)
+        
+        question_entry = tk.Entry(question_frame, font=('Arial', 11), width=50)
+        question_entry.pack(side='left', padx=(0, 10))
+        question_entry.focus()
+        
+        def submit_question():
+            question_text = question_entry.get().strip()
+            if question_text:
+                # Show loading indicator
+                self.show_loading(f"{player.name} is thinking...")
+                
+                # Create conversation
+                conversation = Question(self.user_player, player, question_text)
+                
+                # Create and start worker
+                self.current_worker = ConversationWorker(self.game_manager, conversation, player, question_text)
+                thread = threading.Thread(target=self.current_worker.process_conversation)
+                thread.daemon = True
+                thread.start()
+                
+                # Check for result periodically
+                self.check_conversation_result()
+        
+        submit_btn = tk.Button(
+            question_frame,
+            text="Ask",
+            bg='#27ae60',
+            fg='white',
+            command=submit_question
+        )
+        submit_btn.pack(side='left')
+        
+        question_entry.bind('<Return>', lambda e: submit_question())
+    
+    def check_conversation_result(self):
+        """Check for conversation result from background thread"""
+        if not self.current_worker.result_queue.empty():
+            result = self.current_worker.result_queue.get()
+            self.hide_loading()
+            
+            if result[0] == 'success':
+                _, response, sus_speaker, sus_listener, player, question_text = result
+                
+                self.log_message(f"🗣️ You ask {player.name}: \"{question_text}\"", '#3498db')
+                self.log_message(f"💬 {player.name} says: {response}", '#f39c12')
+                
+                if sus_speaker != 0 or sus_listener != 0:
+                    self.log_suspicion_changes(sus_speaker, sus_listener, player.name)
+                
+                self.update_display()
+            else:
+                self.log_message(f"❌ Error: {result[1]}", '#e74c3c')
         else:
-            print("Invalid choice, please try again.")
+            # Check again after 100ms
+            self.root.after(100, self.check_conversation_result)
+    
+    def make_accusation(self, player):
+        """Handle player accusation with confirmation"""
+        result = messagebox.askyesno(
+            "Confirm Accusation",
+            f"Are you sure you want to accuse {player.name} of murder?\n\nThis is a serious accusation!"
+        )
+        
+        if result:
+            if self.game_manager.accuse_player(self.user_player, player):
+                self.log_message(f"✅ CORRECT! {player.name} was the murderer!", '#27ae60')
+                self.log_message("🎉 You solved the mystery! Congratulations!", '#f39c12')
+                self.disable_actions()
+            else:
+                self.log_message(f"❌ WRONG! {player.name} is not the murderer!", '#e74c3c')
+                self.log_message("📈 Your suspicion has increased massively!", '#e74c3c')
+                self.update_display()
+    
+    def handle_inventory_question(self, player):
+        """Handle asking about inventory with loading indicator"""
+        # Show loading indicator
+        self.show_loading(f"Checking {player.name}'s inventory...")
+        
+        # Create and start worker
+        self.current_worker = InventoryWorker(self.game_manager, player)
+        thread = threading.Thread(target=self.current_worker.process_inventory)
+        thread.daemon = True
+        thread.start()
+        
+        # Check for result periodically
+        self.check_inventory_result()
+    
+    def check_inventory_result(self):
+        """Check for inventory result from background thread"""
+        if not self.current_worker.result_queue.empty():
+            result = self.current_worker.result_queue.get()
+            self.hide_loading()
+            
+            if result[0] == 'success':
+                _, result_data, player = result
+                
+                self.log_message(f"💼 You ask {player.name} about their inventory", '#3498db')
+                self.log_message(f"💬 {player.name} says: {result_data['response']}", '#f39c12')
+                
+                if result_data['suspicion_change_speaker'] != 0 or result_data['suspicion_change_listener'] != 0:
+                    self.log_suspicion_changes(
+                        result_data['suspicion_change_speaker'], 
+                        result_data['suspicion_change_listener'], 
+                        player.name
+                    )
+                
+                self.update_display()
+            else:
+                self.log_message(f"❌ Error: {result[1]}", '#e74c3c')
+        else:
+            # Check again after 100ms
+            self.root.after(100, self.check_inventory_result)
+    
+    def log_suspicion_changes(self, sus_speaker, sus_listener, player_name):
+        """Log suspicion changes in a formatted way"""
+        if sus_speaker != 0:
+            change_type = "increased" if sus_speaker > 0 else "decreased"
+            self.log_message(f"📊 Your suspicion {change_type} by {abs(sus_speaker)}", '#e67e22')
+        if sus_listener != 0:
+            change_type = "increased" if sus_listener > 0 else "decreased"
+            self.log_message(f"📊 {player_name}'s suspicion {change_type} by {abs(sus_listener)}", '#e67e22')
+    
+    def see_players(self):
+        """Show players in current room"""
+        players = self.game_manager.player_manager.get_other_players_in_room(
+            self.game_manager.get_current_room(), self.user_player
+        )
+        
+        if not players:
+            self.log_message("👥 No other players in this room.", '#bdc3c7')
+        else:
+            self.log_message("👥 Players in this room:", '#3498db')
+            for player in players:
+                self.log_message(f"   • {player.name} (Suspicion: {player.suspicion})", '#ecf0f1')
+    
+    def move_room(self):
+        """Handle moving to another room"""
+        rooms = self.game_manager.get_rooms()
+        
+        self.current_action = "move"
+        self.action_label.config(text="Select a room to move to:")
+        
+        # Create a frame for room buttons with scrollbar if needed
+        room_frame = tk.Frame(self.action_frame, bg='#34495e')
+        room_frame.pack(fill='x', padx=10, pady=5)
+        
+        for room in rooms:
+            btn = tk.Button(
+                room_frame,
+                text=f"🚪 {room.name}",
+                font=('Arial', 10),
+                bg='#16a085',
+                fg='white',
+                command=lambda r=room: self.handle_room_move(r),
+                padx=10,
+                anchor='w'
+            )
+            btn.pack(fill='x', pady=2)
+    
+    def handle_room_move(self, room):
+        """Handle moving to selected room"""
+        self.game_manager.move_player(self.user_player, room)
+        self.log_message(f"🚶 You move to the {room.name}", '#3498db')
+        self.update_display()
+    
+    def disable_actions(self):
+        """Disable actions when game is over"""
+        self.action_label.config(text="Game Over - Mystery Solved!")
+        for widget in self.action_frame.winfo_children():
+            if isinstance(widget, tk.Button):
+                widget.config(state=tk.DISABLED)
+    
+    def quit_game(self):
+        """Handle game quit with confirmation"""
+        if messagebox.askyesno("Quit Game", "Are you sure you want to quit the game?"):
+            # Stop any loading indicators
+            self.hide_loading()
+            self.root.quit()
 
-def main():
-    location: Location = generate_location()
-    user_player: Player = register_user_player(location)
-    game_manager: GameManager = GameManager(location, user_player)
-    run_game(game_manager)
+
+class MysteryGameUI:
+    """Main application controller"""
+    
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Murder Mystery Game")
+        self.root.geometry("900x700")
+        self.root.configure(bg='#2c3e50')
+        
+        # Initialize with welcome screen
+        self.welcome_screen = WelcomeScreen(self.root, self.start_game)
+        self.game_screen = None
+    
+    def start_game(self, player_name):
+        """Start the main game with the provided player name"""
+        # Welcome screen is already destroyed, now create game screen
+        self.game_screen = GameScreen(self.root, player_name)
+    
+    def run(self):
+        """Start the application"""
+        self.root.mainloop()
+
+
+def start_ui():
+    """Entry point for starting the UI"""
+    app = MysteryGameUI()
+    app.run()
+
 
 if __name__ == "__main__":
-    main()
+    start_ui()

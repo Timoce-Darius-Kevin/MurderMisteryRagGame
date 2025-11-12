@@ -164,22 +164,18 @@ class RagManager:
         """Create appropriate prompt based on template type"""
         
         listener = question.listener
-        
-        # Format nearby players for context
+
         nearby_players_text = ""
         if nearby_players:
             nearby_players_text = ", ".join([p.name for p in nearby_players if p.id != listener.id])
-        
-        # Format inventory for context (known items only)
+
         known_inventory = [item for item in listener.inventory if item.known]
         inventory_text = "None known to others"
         if known_inventory:
             inventory_text = ", ".join([f"{item.name} ({item.description})" for item in known_inventory])
-        
-        # Get the appropriate template
+
         template = self.prompt_templates[template_type]
-        
-        # Fill the template
+
         messages = template.format_messages(
             character_name=listener.name,
             character_job=listener.job,
@@ -275,20 +271,16 @@ class RagManager:
     def select_appropriate_template(self, question: Question) -> str:
         """Choose the most appropriate template based on conversation context"""
         question_lower = question.question.lower()
-        
-        # High suspicion gets special handling
+
         if question.listener.suspicion > 25:
             return "suspicion_high"
-        
-        # Inventory-related questions
+
         if any(word in question_lower for word in ["item", "carry", "have", "possess", "belongings", "inventory", "what do you have"]):
             return "inventory_query"
-        
-        # Location-related questions  
+
         elif any(word in question_lower for word in ["room", "place", "location", "where", "here", "this room"]):
             return "location_aware"
-        
-        # Default template
+
         else:
             return "basic"
     
@@ -338,8 +330,7 @@ class RagManager:
         """Clean up model response to extract only the assistant's reply"""
         # Convert to string if needed
         response = str(response)
-        
-        # First, try to extract response after common assistant markers
+
         assistant_markers = [
             "Assistant:", "### Assistant:", "<|assistant|>", 
             "[/INST]", "### Response:", "Response:"
@@ -351,16 +342,13 @@ class RagManager:
                 if len(parts) > 1:
                     response = parts[1].strip()
                     break
-        
-        # If we still have the full prompt, try to extract just the last part after the human question
+
         if "Human:" in response or "human" in response.lower():
-            # Split by the question and take what comes after
             question_markers = ["Human:", "human:", "Question:", "### Human:"]
             for marker in question_markers:
                 if marker in response:
                     parts = response.rsplit(marker, 1)
                     if len(parts) > 1:
-                        # Take everything after the last occurrence of the human marker
                         response = parts[1].strip()
                         break
         
@@ -439,7 +427,6 @@ class RagManager:
         if is_murderer and any(keyword in question_lower for keyword in suspicious_keywords):
             suspicion_change_listener += 2
             
-        # Mood adjustments
         if mood == "defensive":
             suspicion_change_listener += 1
         elif mood == "cooperative":
