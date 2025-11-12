@@ -49,12 +49,12 @@ class Player:
         if mood_change != "neutral":
             self.mood = mood_change
 
-def decay_mood_toward_neutral(self) -> None:
-    """Gradually return mood to neutral over time"""
-    if self.mood != "neutral":
-        # 20% chance per turn to return to neutral
-        if random.random() < 0.2:
-            if self.mood == "angry":
-                self.mood = "defensive"
-            elif self.mood == "defensive" or self.mood == "cooperative":
-                self.mood = "neutral"
+    def decay_mood_toward_neutral(self) -> None:
+        """Gradually return mood to neutral over time"""
+        if self.mood != "neutral":
+            # 20% chance per turn to return to neutral
+            if random.random() < 0.2:
+                if self.mood == "angry":
+                    self.mood = "defensive"
+                elif self.mood == "defensive" or self.mood == "cooperative":
+                    self.mood = "neutral"
