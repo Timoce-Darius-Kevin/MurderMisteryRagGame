@@ -626,12 +626,13 @@ class GameScreen:
             # Stop any loading indicators
             self.hide_loading()
             self.cleanup_database()
-            self.root.quit()
+            self.root.destroy()
     
     def cleanup_database(self):
         """Clean up the vector database on application exit"""
         try:
-            self.game_manager.rag_manager.vector_store.delete_collection()
+            if hasattr(self.game_manager.rag_manager, 'vector_store'):
+                self.game_manager.rag_manager.vector_store.delete_collection()
             print("Database cleared successfully.")
         except Exception as e:
             print(f"Error clearing database: {e}")
@@ -703,9 +704,11 @@ class MysteryGameUI:
     def on_window_close(self):
         """Handle window close event"""
         if self.game_screen:
-            self.game_screen.quit_game()
+            self.game_screen.hide_loading()
+            self.game_screen.cleanup_database()
+            self.root.destroy()
         else:
-            self.root.quit()
+            self.root.destroy()
             
     def start_game(self, player_name):
         """Start the main game with the provided player name"""
