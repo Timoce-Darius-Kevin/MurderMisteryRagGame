@@ -8,7 +8,7 @@ from entities.Location import Location
 from entities.Conversation import Question
 from entities.Room import Room
 from managers.GameManager import GameManager
-from game_logic import generate_location, register_user_player, ask_about_inventory
+from game_logic import generate_location, get_user_inventory, register_user_player, ask_about_inventory
 
 
 class LoadingIndicator:
@@ -115,10 +115,8 @@ class ConversationWorker:
     def process_conversation(self):
         """Process conversation in background thread"""
         try:
-            # Simulate some processing time for realism
-            time.sleep(1)
-            response, sus_speaker, sus_listener = self.game_manager.strike_conversation(self.conversation)
-            self.result_queue.put(('success', response, sus_speaker, sus_listener, self.player, self.question_text))
+            response, suspicion_speaker, suspicion_listener = self.game_manager.strike_conversation(self.conversation)
+            self.result_queue.put(('success', response, suspicion_speaker, suspicion_listener, self.player, self.question_text))
         except Exception as e:
             self.result_queue.put(('error', str(e), 0, 0, self.player, self.question_text))
 
@@ -134,8 +132,6 @@ class InventoryWorker:
     def process_inventory(self):
         """Process inventory question in background thread"""
         try:
-            # Simulate some processing time for realism
-            time.sleep(1)
             result = ask_about_inventory(self.game_manager, self.player)
             self.result_queue.put(('success', result, self.player))
         except Exception as e:
@@ -152,7 +148,7 @@ class WelcomeScreen:
     
     def setup_ui(self):
         """Create the welcome screen UI"""
-        welcome_frame = tk.Frame(self.root, bg='#2c3e50', padx=20, pady=20)
+        welcome_frame = tk.Frame(self.root, bg="#191f72", padx=20, pady=20)
         welcome_frame.pack(expand=True, fill='both')
         
         # Title
@@ -170,8 +166,8 @@ class WelcomeScreen:
             welcome_frame,
             text="Welcome to the Murder Mystery Game!\n\nA crime has been committed and you must uncover the truth.\nInterview suspects, gather clues, and solve the mystery before it's too late!",
             font=('Arial', 12),
-            fg='#ecf0f1',
-            bg='#2c3e50',
+            fg="#000000",
+            bg="#7c0d86",
             justify='center'
         )
         intro_text.pack(pady=20)
@@ -233,7 +229,7 @@ class GameScreen:
         
         # Initialize game state in constructor
         self.location = generate_location()
-        self.user_player = register_user_player(self.location, player_name)
+        self.user_player = register_user_player(player_name)
         self.game_manager = GameManager(self.location, self.user_player)
         
         # UI state - initialize with empty/default values
@@ -258,7 +254,7 @@ class GameScreen:
     def setup_ui(self):
         """Create the main game interface"""
         # Main container
-        main_container = tk.Frame(self.root, bg='#2c3e50')
+        main_container = tk.Frame(self.root, bg='#34495e')
         main_container.pack(expand=True, fill='both', padx=10, pady=10)
         
         # Top section - Location and suspicion
@@ -269,7 +265,7 @@ class GameScreen:
             top_frame,
             font=('Arial', 14, 'bold'),
             fg='#f39c12',
-            bg='#34495e',
+            bg="#34495e",
             justify='left'
         )
         self.location_label.pack(anchor='w', padx=10, pady=5)
@@ -283,7 +279,7 @@ class GameScreen:
         self.suspicion_label.pack(anchor='w', padx=10, pady=(0, 5))
         
         # Middle section - Action buttons and output
-        middle_frame = tk.Frame(main_container, bg='#2c3e50')
+        middle_frame = tk.Frame(main_container, bg='#34495e')
         middle_frame.pack(fill='both', expand=True)
         
         # Left panel - Actions
@@ -304,9 +300,10 @@ class GameScreen:
             ("👥 See Players in Room", self.see_players),
             ("🚪 Move to Another Room", self.move_room),
             ("💼 Ask About Inventory", self.ask_inventory),
+            ("👤 View Player Details", self.view_player_details),  # NEW
+            ("🎒 View My Inventory", self.view_my_inventory),      # NEW
             ("❌ Quit Game", self.quit_game)
         ]
-        
         for text, command in actions:
             btn = tk.Button(
                 action_frame,
@@ -446,15 +443,6 @@ class GameScreen:
             )
             btn.pack(side='left', padx=5, pady=5)
     
-    def handle_player_selection(self, player):
-        """Handle when a player is selected for an action"""
-        if self.current_action == "ask_question":
-            self.ask_question_to_player(player)
-        elif self.current_action == "accuse":
-            self.make_accusation(player)
-        elif self.current_action == "inventory":
-            self.handle_inventory_question(player)
-    
     def ask_question_to_player(self, player):
         """Show interface for asking a specific question"""
         self.action_label.config(text=f"Ask {player.name} a question:")
@@ -545,8 +533,6 @@ class GameScreen:
         thread = threading.Thread(target=self.current_worker.process_inventory)
         thread.daemon = True
         thread.start()
-        
-        # Check for result periodically
         self.check_inventory_result()
     
     def check_inventory_result(self):
@@ -639,7 +625,66 @@ class GameScreen:
         if messagebox.askyesno("Quit Game", "Are you sure you want to quit the game?"):
             # Stop any loading indicators
             self.hide_loading()
+            self.cleanup_database()
             self.root.quit()
+    
+    def cleanup_database(self):
+        """Clean up the vector database on application exit"""
+        try:
+            self.game_manager.rag_manager.vector_store.delete_collection()
+            print("Database cleared successfully.")
+        except Exception as e:
+            print(f"Error clearing database: {e}")
+
+    def view_player_details(self):
+        """Handle viewing player details (job and known items)"""
+        players = self.game_manager.get_other_players_in_current_room()
+        
+        if not players:
+            self.log_message("❌ No other players in this room to view details.", '#e74c3c')
+            return
+            
+        self.current_action = "view_details"
+        self.show_player_selection(players, "View details for:")
+
+    def view_my_inventory(self):
+        """Handle viewing the user's own inventory"""
+        result = get_user_inventory(self.user_player)
+        self.log_message("🎒 Your Inventory:", '#3498db')
+        self.log_message(result['response'], '#ecf0f1')
+        
+        # Log item details if any
+        if self.user_player.inventory:
+            for item in self.user_player.inventory:
+                weapon_indicator = " 🔪" if item.murder_weapon else ""
+                self.log_message(f"   • {item.name}{weapon_indicator} - {item.description} (Value: {item.value})", '#bdc3c7')
+
+    def handle_player_selection(self, player):
+        """Handle when a player is selected for an action"""
+        if self.current_action == "ask_question":
+            self.ask_question_to_player(player)
+        elif self.current_action == "accuse":
+            self.make_accusation(player)
+        elif self.current_action == "inventory":
+            self.handle_inventory_question(player)
+        elif self.current_action == "view_details":
+            self.show_player_details(player)
+
+    def show_player_details(self, player):
+        """Show detailed information about a player"""
+        self.log_message(f"👤 Player Details: {player.name}", '#3498db')
+        self.log_message(f"   Profession: {player.job}", '#ecf0f1')
+        self.log_message(f"   Suspicion Level: {player.suspicion}", '#e67e22')
+        self.log_message(f"   Current Mood: {player.mood}", '#9b59b6')
+        
+        known_items = player.get_known_items()
+        if known_items:
+            self.log_message("   Known Items:", '#27ae60')
+            for item in known_items:
+                weapon_indicator = " 🔪" if item.murder_weapon else ""
+                self.log_message(f"     • {item.name}{weapon_indicator} - {item.description}", '#bdc3c7')
+        else:
+            self.log_message("   No known items yet.", '#95a5a6')
 
 
 class MysteryGameUI:
@@ -649,16 +694,25 @@ class MysteryGameUI:
         self.root = tk.Tk()
         self.root.title("Murder Mystery Game")
         self.root.geometry("900x700")
-        self.root.configure(bg='#2c3e50')
-        
-        # Initialize with welcome screen
+        self.root.configure(bg="#c6c2c9")
+        self.root.protocol("WM_DELETE_WINDOW", self.on_window_close)
         self.welcome_screen = WelcomeScreen(self.root, self.start_game)
+        self.root.mainloop()
         self.game_screen = None
-    
+        
+    def on_window_close(self):
+        """Handle window close event"""
+        if self.game_screen:
+            self.game_screen.quit_game()
+        else:
+            self.root.quit()
+            
     def start_game(self, player_name):
         """Start the main game with the provided player name"""
-        # Welcome screen is already destroyed, now create game screen
-        self.game_screen = GameScreen(self.root, player_name)
+        try:
+            self.game_screen = GameScreen(self.root, player_name)
+        except Exception as e:
+            print(e)
     
     def run(self):
         """Start the application"""

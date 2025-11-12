@@ -58,3 +58,7 @@ class Player:
                     self.mood = "defensive"
                 elif self.mood == "defensive" or self.mood == "cooperative":
                     self.mood = "neutral"
+    
+    def get_known_items(self) -> list[Item]:
+        """Get items that are known to others"""
+        return [item for item in self.inventory if item.known]

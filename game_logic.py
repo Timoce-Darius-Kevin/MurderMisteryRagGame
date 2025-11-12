@@ -74,6 +74,43 @@ def generate_location() -> Location:
     location = Location(real_location_name, real_location_description, 10, location_event, selected_rooms)
     return location
 
-def register_user_player(location: Location, name: str) -> Player:
+def register_user_player(name: str) -> Player:
     """Register user player - now takes name as parameter"""
     return Player(0, name, 0)
+
+def get_player_job(selected_player: Player) -> dict:
+    """Get a player's job information"""
+    return {
+        'player_name': selected_player.name,
+        'job': selected_player.job,
+        'response': f"My profession is {selected_player.job}."
+    }
+
+def get_player_known_items(selected_player: Player) -> dict:
+    """Get a player's known items"""
+    known_items = selected_player.get_known_items()
+    if known_items:
+        items_text = ", ".join([f"{item.name} ({item.description})" for item in known_items])
+        response = f"From what I've shared, I have: {items_text}"
+    else:
+        response = "I haven't shared information about any items I'm carrying."
+    
+    return {
+        'player_name': selected_player.name,
+        'known_items': known_items,
+        'response': response
+    }
+
+def get_user_inventory(user_player: Player) -> dict:
+    """Get the user's own inventory"""
+    if user_player.inventory:
+        items_text = "\n".join([f"• {item.name} - {item.description} (Type: {item.item_type})" for item in user_player.inventory])
+        response = f"You are carrying:\n{items_text}"
+
+    else:
+        response = "You are not carrying any items."
+    
+    return {
+        'inventory': user_player.inventory,
+        'response': response
+    }

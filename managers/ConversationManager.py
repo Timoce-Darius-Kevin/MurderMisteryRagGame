@@ -33,4 +33,16 @@ class ConversationManager:
             question.question, response_text, suspicion_change_speaker
         )
         
+        if "item" in question.question.lower() or "inventory" in question.question.lower() or "carry" in question.question.lower():
+            self._update_known_items_from_conversation(question, response_text)
+        
         return response_text, suspicion_change_speaker, suspicion_change_listener
+
+    def _update_known_items_from_conversation(self, question: Question, response: str) -> None:
+        """Update known items based on conversation content"""
+        listener = question.listener
+        response_lower = response.lower()
+        
+        for item in listener.inventory:
+            if item.name.lower() in response_lower and not item.murder_weapon:
+                item.known = True

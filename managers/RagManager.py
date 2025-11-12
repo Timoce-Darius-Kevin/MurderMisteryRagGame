@@ -153,6 +153,12 @@ class RagManager:
                 question.listener.lying_ability, question.listener.mood
             )
             
+            # If this is an inventory question and the listener is innocent, mark their items as known
+            if "inventory" in self.select_appropriate_template(question) and not question.listener.murderer:
+                for item in question.listener.inventory:
+                    if not item.murder_weapon:  # Don't automatically reveal murder weapons
+                        item.known = True
+            
             return response_text, suspicion_change_speaker, suspicion_change_listener 
             
         except Exception as exception:
@@ -175,7 +181,7 @@ class RagManager:
             inventory_text = ", ".join([f"{item.name} ({item.description})" for item in known_inventory])
 
         template = self.prompt_templates[template_type]
-
+        print(context)
         messages = template.format_messages(
             character_name=listener.name,
             character_job=listener.job,
@@ -441,3 +447,17 @@ class RagManager:
         suspicion_change_listener = max(min(suspicion_change_listener, 8), -3)
         
         return suspicion_change_speaker, suspicion_change_listener
+
+    def clear_database(self) -> None:
+        """Clear the entire conversation database"""
+        try:
+            self.vector_store.delete_collection()
+            print("Conversation database cleared.")
+        except Exception as e:
+            print(f"Error clearing database: {e}")
+            try:
+                all_docs = self.vector_store.get()
+                if 'ids' in all_docs and all_docs['ids']:
+                    self.vector_store.delete(ids=all_docs['ids'])
+            except Exception as e2:
+                print(f"Error with fallback cleanup: {e2}")

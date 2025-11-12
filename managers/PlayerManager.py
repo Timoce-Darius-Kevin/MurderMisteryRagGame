@@ -56,7 +56,7 @@ class PlayerManager:
             Item("Poison Vial", "A small glass vial", "weapon", True, 7),
             Item("Rope", "A length of strong rope", "weapon", True, 6)
         ]
-        
+        player.inventory.clear()
         if is_murderer:
             murder_weapon = random.choice(weapon_items)
             murder_weapon.murder_weapon = True
@@ -64,8 +64,13 @@ class PlayerManager:
             player.inventory.extend(random.sample(common_items, random.randint(1, 2)))
         else:
             player.inventory.extend(random.sample(common_items, random.randint(2, 3)))
+        
+        # Make some items known by default (personal items)
+        for item in player.inventory:
+            if item.item_type == "personal" and not item.murder_weapon:
+                item.known = True
             
-    def move_npcs_randomly(self, location: Location) -> None:
+    def move_npcs_randomly(self) -> None:
         """Move NPCs to random connected rooms"""
         for player in self.get_players():
             if player.id != 0:

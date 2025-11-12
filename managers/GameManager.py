@@ -30,7 +30,7 @@ class GameManager:
     def advance_turn_with_npc_movement(self) -> None:
         """Advance turn and move NPCs"""
         self.game_state_manager.advance_turn()
-        self.player_manager.move_npcs_randomly(self.location)
+        self.player_manager.move_npcs_randomly()
     
     def move_player(self, player: Player, room: Room) -> None:
         self.player_manager.move_player_to_room(player, room)

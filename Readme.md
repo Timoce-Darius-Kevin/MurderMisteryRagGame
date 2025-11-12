@@ -23,17 +23,15 @@ In the second dev phase I want the player to be able to move between rooms and s
 
 ## Third development phase
 
-In the third phase the application should load player and location data from one or more JSON or YAML documents and ellaborate based on the minimal data existing in the model classes e.g. Location("Haunted house", "spooky house full of ghosts") will become a paragraph about the fictive history of the house and why is it haunted. Same with the players and their jobs. Conversations should flow better at this point, due to more data being given to the LLM through RAG. Similar behaviour will happen with the rooms of the location, the ai will develop the name of the room based on a small name and description and remember it. At the end of this phase the RAG should be able to generate descriptions for players, rooms and the location, and a short narration of the event during an initial loading phase. The Rag should also get a piece of the state of the game and make the murderer more frantic as the turns approach the limit.
-
+In the third phase entity data (players, locations, rooms etc...) that is usually randomly selected from in-memory lists, may be loaded from and saved to JSON or YAML files.
+This Data may be passed through an agent to elaborate details. A clue system should be implemented, as clues may be items pointing towards the murderer or even conversation pieces, with a new entity and repository called Clue Journal being implemented. This clue journal will be visible to the player. A way for the player to view people in connected rooms from the room they are in, and be able to move only to connected rooms should exist. A more developed room structure, with upstairs, downstairs and rooms that are everpresent on the map should be integrated with the AI how the rooms are connected logically.
 - Some rooms should be static in every map and random rooms will tie to them to establish structure
 - Item discovery tracking tools
 - Conversation pattern analysis tools
 - Suspicion calculation tools
-
-## Fourth development phase
-
-During this phase rooms will become connected together in a house like manner (e.g. Bathroom leads to the hallway not to every other room in the house), and the players may move between rooms that are connected together. Rooms will also have occupancy limits, that when reached should make them unavailable.
-
+-Find a better system for item discovery
+-Items should now exist in rooms and may be inspected for clues, prompting the AI to come up with a description.
+-Once inspected the item is known and will give the previous description stored in rag
 ## Further phases - To be decided at a later point in time.
 
 Effects and events should be implemented. The game may have puzzles and/or antagonists that acively hunt the player. The murderer may be an antagonist and not a player and the players may have to escape. Story structures to guide the AI in developing a story. Stats for the player, that the effects may act upon such as discovery rate for puzzle items. Complex AI behaviour, with players finding items and having to be convinced to use it in the right place or give it to the player. The inventory system. An evidence system should exist for accusations. A system when the murderer even though is accused they should be voted by the other inoccent player before the murder is solved. In the case of an antagonist being present, players may die, leaving a body that is unable to respond.
