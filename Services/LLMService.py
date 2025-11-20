@@ -6,7 +6,7 @@ from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
 class LLMService:
     
     def __init__(self):
-        self.model_name = ModelConfig.EMBEDDING_MODEL
+        self.model_name = ModelConfig.DEFAULT_MODEL
         self.fallback_model = ModelConfig.FALLBACK_MODEL
         self.model = self._initialize_llm()
         

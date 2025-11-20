@@ -1,10 +1,10 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
-import threading
-import queue
-from entities.Question import Question
+
 from managers.GameManager import GameManager
-from game_logic import generate_location, get_user_inventory, register_user_player, ask_about_inventory
+from Services.ErrorHandler import ErrorHandler
+from game_logic import generate_location, register_user_player
+from ui.GameUIController import GameUIController
 
 
 class LoadingIndicator:
@@ -98,42 +98,6 @@ class LoadingIndicator:
             pass
 
 
-class ConversationWorker:
-    """Handles conversation processing in background threads"""
-    
-    def __init__(self, game_manager, conversation, player, question_text):
-        self.game_manager = game_manager
-        self.conversation = conversation
-        self.player = player
-        self.question_text = question_text
-        self.result_queue = queue.Queue()
-        
-    def process_conversation(self):
-        """Process conversation in background thread"""
-        try:
-            response, suspicion_speaker, suspicion_listener = self.game_manager.strike_conversation(self.conversation)
-            self.result_queue.put(('success', response, suspicion_speaker, suspicion_listener, self.player, self.question_text))
-        except Exception as e:
-            self.result_queue.put(('error', str(e), 0, 0, self.player, self.question_text))
-
-
-class InventoryWorker:
-    """Handles inventory questions in background threads"""
-    
-    def __init__(self, game_manager, player):
-        self.game_manager = game_manager
-        self.player = player
-        self.result_queue = queue.Queue()
-        
-    def process_inventory(self):
-        """Process inventory question in background thread"""
-        try:
-            result = ask_about_inventory(self.game_manager, self.player)
-            self.result_queue.put(('success', result, self.player))
-        except Exception as e:
-            self.result_queue.put(('error', str(e), self.player))
-
-
 class WelcomeScreen:
     """Welcome screen for player registration"""
     
@@ -217,27 +181,39 @@ class WelcomeScreen:
 
 
 class GameScreen:
-    """Main game screen with all game functionality"""
-    
-    def __init__(self, root, player_name):
+    """Main game screen with all game functionality."""
+
+    def __init__(self, root: tk.Tk, player_name: str, error_handler: ErrorHandler | None = None) -> None:
+        """Create the main game screen.
+
+        Args:
+            root: The Tk root window.
+            player_name: Name entered by the player.
+            error_handler: Optional shared error handler instance.
+        """
         self.root = root
         self.player_name = player_name
-        
+        self.error_handler = error_handler or ErrorHandler()
+
         # Initialize game state in constructor
         self.location = generate_location()
         self.user_player = register_user_player(player_name)
-        self.game_manager = GameManager(self.location, self.user_player)
-        
-        # UI state - initialize with empty/default values
-        self.current_action = ""
-        self.loading_indicator = None
-        self.current_worker = ConversationWorker(
-            self.game_manager, 
-            Question(self.user_player, self.user_player, ""),  # Default conversation
-            self.user_player, 
-            ""
+        self.game_manager = GameManager(
+            self.location,
+            self.user_player,
+            error_handler=self.error_handler,
         )
-        
+        self.controller = GameUIController(
+            self.game_manager,
+            self.user_player,
+            error_handler=self.error_handler,
+        )
+
+        # UI state - initialize with empty/default values
+        self.current_action: str = ""
+        self.loading_indicator: LoadingIndicator | None = None
+        self.current_result_queue = None
+
         self.setup_ui()
         self.update_display()
         
@@ -351,8 +327,8 @@ class GameScreen:
         self.action_label.pack(pady=5)
     
     def update_display(self):
-        """Update the game display with current state"""
-        current_room = self.game_manager.get_current_room()
+        """Update the game display with current state."""
+        current_room = self.controller.get_current_room()
         
         # Update location info
         location_text = f"📍 {current_room.name}\n{current_room.description}"
@@ -367,30 +343,28 @@ class GameScreen:
             if widget != self.action_label:
                 widget.destroy()
     
-    def log_message(self, message, color='#00ff00'):
-        """Add a message to the game log"""
+    def log_message(self, message: str, color: str = '#00ff00') -> None:
+        """Add a message to the game log."""
         self.output_text.config(state=tk.NORMAL)
         self.output_text.insert(tk.END, f"{message}\n")
         self.output_text.config(state=tk.DISABLED)
         self.output_text.see(tk.END)
     
-    def show_loading(self, text="Thinking..."):
-        """Show loading indicator"""
+    def show_loading(self, text: str = "Thinking...") -> None:
+        """Show loading indicator."""
         if self.loading_indicator is None:
             self.loading_indicator = LoadingIndicator(self.root, text)
         self.loading_indicator.start()
     
-    def hide_loading(self):
-        """Hide loading indicator"""
+    def hide_loading(self) -> None:
+        """Hide loading indicator."""
         if self.loading_indicator:
             self.loading_indicator.stop()
             self.loading_indicator = None
     
-    def ask_question(self):
-        """Handle asking questions to players"""
-        players = self.game_manager.player_manager.get_other_players_in_room(
-            self.game_manager.get_current_room(), self.user_player
-        )
+    def ask_question(self) -> None:
+        """Handle asking questions to players."""
+        players = self.controller.get_players_in_current_room()
         
         if not players:
             self.log_message("❌ No one is near you. Move to another room to find suspects.", '#e74c3c')
@@ -399,11 +373,9 @@ class GameScreen:
         self.current_action = "ask_question"
         self.show_player_selection(players, "Ask a question to:")
     
-    def accuse_player(self):
-        """Handle accusing players"""
-        players = self.game_manager.player_manager.get_other_players_in_room(
-            self.game_manager.get_current_room(), self.user_player
-        )
+    def accuse_player(self) -> None:
+        """Handle accusing players."""
+        players = self.controller.get_players_in_current_room()
         
         if not players:
             self.log_message("❌ No one is near you. Move to another room to find suspects.", '#e74c3c')
@@ -412,9 +384,9 @@ class GameScreen:
         self.current_action = "accuse"
         self.show_player_selection(players, "Accuse someone of murder:")
     
-    def ask_inventory(self):
-        """Handle asking about inventory"""
-        players = self.game_manager.get_other_players_in_current_room()
+    def ask_inventory(self) -> None:
+        """Handle asking about inventory."""
+        players = self.controller.get_players_in_current_room()
         
         if not players:
             self.log_message("❌ No one is near you. Move to another room to find suspects.", '#e74c3c')
@@ -423,8 +395,8 @@ class GameScreen:
         self.current_action = "inventory"
         self.show_player_selection(players, "Ask about inventory:")
     
-    def show_player_selection(self, players, title):
-        """Show player selection interface"""
+    def show_player_selection(self, players, title: str) -> None:
+        """Show player selection interface."""
         self.action_label.config(text=title)
         
         for idx, player in enumerate(players):
@@ -439,8 +411,8 @@ class GameScreen:
             )
             btn.pack(side='left', padx=5, pady=5)
     
-    def ask_question_to_player(self, player):
-        """Show interface for asking a specific question"""
+    def ask_question_to_player(self, player) -> None:
+        """Show interface for asking a specific question."""
         self.action_label.config(text=f"Ask {player.name} a question:")
         
         # Question entry
@@ -451,21 +423,17 @@ class GameScreen:
         question_entry.pack(side='left', padx=(0, 10))
         question_entry.focus()
         
-        def submit_question():
+        def submit_question() -> None:
             question_text = question_entry.get().strip()
             if question_text:
                 # Show loading indicator
                 self.show_loading(f"{player.name} is thinking...")
-                
-                # Create conversation
-                conversation = Question(self.user_player, player, question_text)
-                
-                # Create and start worker
-                self.current_worker = ConversationWorker(self.game_manager, conversation, player, question_text)
-                thread = threading.Thread(target=self.current_worker.process_conversation)
-                thread.daemon = True
-                thread.start()
-                
+
+                # Start conversation asynchronously via controller
+                self.current_result_queue = self.controller.start_conversation_async(
+                    player, question_text
+                )
+
                 # Check for result periodically
                 self.check_conversation_result()
         
@@ -480,37 +448,49 @@ class GameScreen:
         
         question_entry.bind('<Return>', lambda e: submit_question())
     
-    def check_conversation_result(self):
-        """Check for conversation result from background thread"""
-        if not self.current_worker.result_queue.empty():
-            result = self.current_worker.result_queue.get()
+    def check_conversation_result(self) -> None:
+        """Check for conversation result from background thread."""
+        if self.current_result_queue is None:
+            return
+
+        if not self.current_result_queue.empty():
+            status, payload = self.current_result_queue.get()
+            self.current_result_queue = None
             self.hide_loading()
-            
-            if result[0] == 'success':
-                _, response, sus_speaker, sus_listener, player, question_text = result
-                
-                self.log_message(f"🗣️ You ask {player.name}: \"{question_text}\"", '#3498db')
-                self.log_message(f"💬 {player.name} says: {response}", '#f39c12')
-                
+
+            if status == "success":
+                result_data = payload
+                player = result_data["player"]
+                question_text = result_data["question_text"]
+                response = result_data["response"]
+                sus_speaker = result_data["suspicion_change_speaker"]
+                sus_listener = result_data["suspicion_change_listener"]
+
+                self.log_message(
+                    f"🗣️ You ask {player.name}: \"{question_text}\"", "#3498db"
+                )
+                self.log_message(f"💬 {player.name} says: {response}", "#f39c12")
+
                 if sus_speaker != 0 or sus_listener != 0:
                     self.log_suspicion_changes(sus_speaker, sus_listener, player.name)
-                
+
                 self.update_display()
             else:
-                self.log_message(f"❌ Error: {result[1]}", '#e74c3c')
+                error_message = str(payload)
+                self.log_message(f"❌ Error: {error_message}", "#e74c3c")
         else:
             # Check again after 100ms
             self.root.after(100, self.check_conversation_result)
     
-    def make_accusation(self, player):
-        """Handle player accusation with confirmation"""
+    def make_accusation(self, player) -> None:
+        """Handle player accusation with confirmation."""
         result = messagebox.askyesno(
             "Confirm Accusation",
             f"Are you sure you want to accuse {player.name} of murder?\n\nThis is a serious accusation!"
         )
         
         if result:
-            if self.game_manager.accuse_player(self.user_player, player):
+            if self.controller.accuse_player(player):
                 self.log_message(f"✅ CORRECT! {player.name} was the murderer!", '#27ae60')
                 self.log_message("🎉 You solved the mystery! Congratulations!", '#f39c12')
                 self.disable_actions()
@@ -519,46 +499,56 @@ class GameScreen:
                 self.log_message("📈 Your suspicion has increased massively!", '#e74c3c')
                 self.update_display()
     
-    def handle_inventory_question(self, player):
-        """Handle asking about inventory with loading indicator"""
+    def handle_inventory_question(self, player) -> None:
+        """Handle asking about inventory with loading indicator."""
         # Show loading indicator
         self.show_loading(f"Checking {player.name}'s inventory...")
-        
-        # Create and start worker
-        self.current_worker = InventoryWorker(self.game_manager, player)
-        thread = threading.Thread(target=self.current_worker.process_inventory)
-        thread.daemon = True
-        thread.start()
+
+        # Start inventory query asynchronously via controller
+        self.current_result_queue = self.controller.start_inventory_query_async(player)
         self.check_inventory_result()
     
-    def check_inventory_result(self):
-        """Check for inventory result from background thread"""
-        if not self.current_worker.result_queue.empty():
-            result = self.current_worker.result_queue.get()
+    def check_inventory_result(self) -> None:
+        """Check for inventory result from background thread."""
+        if self.current_result_queue is None:
+            return
+
+        if not self.current_result_queue.empty():
+            status, payload = self.current_result_queue.get()
+            self.current_result_queue = None
             self.hide_loading()
-            
-            if result[0] == 'success':
-                _, result_data, player = result
-                
-                self.log_message(f"💼 You ask {player.name} about their inventory", '#3498db')
-                self.log_message(f"💬 {player.name} says: {result_data['response']}", '#f39c12')
-                
-                if result_data['suspicion_change_speaker'] != 0 or result_data['suspicion_change_listener'] != 0:
+
+            if status == "success":
+                result_data = payload
+                player = result_data.get("player")
+
+                self.log_message(
+                    f"💼 You ask {player.name} about their inventory", "#3498db"
+                )
+                self.log_message(
+                    f"💬 {player.name} says: {result_data['response']}", "#f39c12"
+                )
+
+                if (
+                    result_data["suspicion_change_speaker"] != 0
+                    or result_data["suspicion_change_listener"] != 0
+                ):
                     self.log_suspicion_changes(
-                        result_data['suspicion_change_speaker'], 
-                        result_data['suspicion_change_listener'], 
-                        player.name
+                        result_data["suspicion_change_speaker"],
+                        result_data["suspicion_change_listener"],
+                        player.name,
                     )
-                
+
                 self.update_display()
             else:
-                self.log_message(f"❌ Error: {result[1]}", '#e74c3c')
+                error_message = str(payload)
+                self.log_message(f"❌ Error: {error_message}", "#e74c3c")
         else:
             # Check again after 100ms
             self.root.after(100, self.check_inventory_result)
     
-    def log_suspicion_changes(self, sus_speaker, sus_listener, player_name):
-        """Log suspicion changes in a formatted way"""
+    def log_suspicion_changes(self, sus_speaker: int, sus_listener: int, player_name: str) -> None:
+        """Log suspicion changes in a formatted way."""
         if sus_speaker != 0:
             change_type = "increased" if sus_speaker > 0 else "decreased"
             self.log_message(f"📊 Your suspicion {change_type} by {abs(sus_speaker)}", '#e67e22')
@@ -566,11 +556,9 @@ class GameScreen:
             change_type = "increased" if sus_listener > 0 else "decreased"
             self.log_message(f"📊 {player_name}'s suspicion {change_type} by {abs(sus_listener)}", '#e67e22')
     
-    def see_players(self):
-        """Show players in current room"""
-        players = self.game_manager.player_manager.get_other_players_in_room(
-            self.game_manager.get_current_room(), self.user_player
-        )
+    def see_players(self) -> None:
+        """Show players in current room."""
+        players = self.controller.get_players_in_current_room()
         
         if not players:
             self.log_message("👥 No other players in this room.", '#bdc3c7')
@@ -579,9 +567,9 @@ class GameScreen:
             for player in players:
                 self.log_message(f"   • {player.name} (Suspicion: {player.suspicion})", '#ecf0f1')
     
-    def move_room(self):
-        """Handle moving to another room"""
-        rooms = self.game_manager.get_rooms()
+    def move_room(self) -> None:
+        """Handle moving to another room."""
+        rooms = self.controller.get_all_rooms()
         
         self.current_action = "move"
         self.action_label.config(text="Select a room to move to:")
@@ -603,37 +591,38 @@ class GameScreen:
             )
             btn.pack(fill='x', pady=2)
     
-    def handle_room_move(self, room):
-        """Handle moving to selected room"""
-        self.game_manager.move_player(self.user_player, room)
+    def handle_room_move(self, room) -> None:
+        """Handle moving to selected room."""
+        self.controller.move_to_room(room)
         self.log_message(f"🚶 You move to the {room.name}", '#3498db')
         self.update_display()
     
-    def disable_actions(self):
-        """Disable actions when game is over"""
+    def disable_actions(self) -> None:
+        """Disable actions when game is over."""
         self.action_label.config(text="Game Over - Mystery Solved!")
         for widget in self.action_frame.winfo_children():
             if isinstance(widget, tk.Button):
                 widget.config(state=tk.DISABLED)
     
-    def quit_game(self):
-        """Handle game quit with confirmation"""
+    def quit_game(self) -> None:
+        """Handle game quit with confirmation."""
         if messagebox.askyesno("Quit Game", "Are you sure you want to quit the game?"):
             # Stop any loading indicators
             self.hide_loading()
             self.cleanup_database()
             self.root.destroy()
     
-    def cleanup_database(self):
-        """Clean up the vector database on application exit"""
+    def cleanup_database(self) -> None:
+        """Clean up the vector database on application exit."""
         try:
-            self.game_manager.cleanup()
-        except Exception as e:
-            print(f"Error during cleanup: {e}")
+            self.controller.cleanup()
+        except Exception as error:
+            # Fallback to simple stdout logging if controller cleanup fails.
+            print(f"Error during cleanup: {error}")
 
-    def view_player_details(self):
-        """Handle viewing player details (job and known items)"""
-        players = self.game_manager.get_other_players_in_current_room()
+    def view_player_details(self) -> None:
+        """Handle viewing player details (job and known items)."""
+        players = self.controller.get_players_in_current_room()
         
         if not players:
             self.log_message("❌ No other players in this room to view details.", '#e74c3c')
@@ -642,9 +631,9 @@ class GameScreen:
         self.current_action = "view_details"
         self.show_player_selection(players, "View details for:")
 
-    def view_my_inventory(self):
-        """Handle viewing the user's own inventory"""
-        result = get_user_inventory(self.user_player)
+    def view_my_inventory(self) -> None:
+        """Handle viewing the user's own inventory."""
+        result = self.controller.get_user_inventory()
         self.log_message("🎒 Your Inventory:", '#3498db')
         self.log_message(result['response'], '#ecf0f1')
         
@@ -654,8 +643,8 @@ class GameScreen:
                 weapon_indicator = " 🔪" if item.murder_weapon else ""
                 self.log_message(f"   • {item.name}{weapon_indicator} - {item.description} (Value: {item.value})", '#bdc3c7')
 
-    def handle_player_selection(self, player):
-        """Handle when a player is selected for an action"""
+    def handle_player_selection(self, player) -> None:
+        """Handle when a player is selected for an action."""
         if self.current_action == "ask_question":
             self.ask_question_to_player(player)
         elif self.current_action == "accuse":
@@ -665,8 +654,8 @@ class GameScreen:
         elif self.current_action == "view_details":
             self.show_player_details(player)
 
-    def show_player_details(self, player):
-        """Show detailed information about a player"""
+    def show_player_details(self, player) -> None:
+        """Show detailed information about a player."""
         self.log_message(f"👤 Player Details: {player.name}", '#3498db')
         self.log_message(f"   Profession: {player.job}", '#ecf0f1')
         self.log_message(f"   Suspicion Level: {player.suspicion}", '#e67e22')
@@ -683,41 +672,46 @@ class GameScreen:
 
 
 class MysteryGameUI:
-    """Main application controller"""
-    
-    def __init__(self):
+    """Main application controller for the Murder Mystery game UI."""
+
+    def __init__(self) -> None:
+        """Initialize the Tkinter root window and welcome screen."""
         self.root = tk.Tk()
+        self.error_handler = ErrorHandler()
         self.root.title("Murder Mystery Game")
         self.root.geometry("900x700")
         self.root.configure(bg="#c6c2c9")
         self.root.protocol("WM_DELETE_WINDOW", self.on_window_close)
         self.welcome_screen = WelcomeScreen(self.root, self.start_game)
-        self.root.mainloop()
-        self.game_screen = None
-        
-    def on_window_close(self):
-        """Handle window close event"""
+        self.game_screen: GameScreen | None = None
+
+    def on_window_close(self) -> None:
+        """Handle window close event."""
         if self.game_screen:
             self.game_screen.hide_loading()
             self.game_screen.cleanup_database()
             self.root.destroy()
         else:
             self.root.destroy()
-            
-    def start_game(self, player_name):
-        """Start the main game with the provided player name"""
+
+    def start_game(self, player_name: str) -> None:
+        """Start the main game with the provided player name."""
         try:
-            self.game_screen = GameScreen(self.root, player_name)
-        except Exception as e:
-            print(e)
-    
-    def run(self):
-        """Start the application"""
+            self.game_screen = GameScreen(self.root, player_name, self.error_handler)
+        except Exception as error:
+            self.error_handler.log_error(error, context="MysteryGameUI.start_game")
+            messagebox.showerror(
+                "Error",
+                "An unexpected error occurred while starting the game."
+            )
+
+    def run(self) -> None:
+        """Start the application event loop."""
         self.root.mainloop()
 
 
-def start_ui():
-    """Entry point for starting the UI"""
+def start_ui() -> None:
+    """Entry point for starting the UI."""
     app = MysteryGameUI()
     app.run()
 
