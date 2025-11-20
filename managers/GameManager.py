@@ -51,18 +51,17 @@ class GameManager:
 
         # Initialize resource manager
         self.resource_manager = ResourceManager(error_handler=self.error_handler)
-        self.resource_manager.initialize(
-            self.rag_manager.llm_service,
-            self.rag_manager.memory_service,
-            self.rag_manager.conversation_repository,
-        )
-
         self.initialize_game()
     
     def initialize_game(self) -> None:
         """Place all players in the starting room."""
         self.player_manager.setup_players(self.location, self.user_player)
         self.player_manager.select_murderer()
+        self.resource_manager.initialize(
+            self.rag_manager.llm_service,
+            self.rag_manager.memory_service,
+            self.rag_manager.conversation_repository,
+        )
 
     def advance_turn_with_npc_movement(self) -> None:
         """Advance the game turn and move NPCs."""
