@@ -86,9 +86,9 @@ def get_player_job(selected_player: Player) -> dict:
         'response': f"My profession is {selected_player.job}."
     }
 
-def get_player_known_items(game_manager, selected_player: Player) -> dict:
+def get_player_known_items(selected_player: Player) -> dict:
     """Get a player's known items"""
-    known_items = game_manager.player.get_known_items(selected_player)
+    known_items = selected_player.get_known_items()
     if known_items:
         items_text = ", ".join([f"{item.name} ({item.description})" for item in known_items])
         response = f"From what I've shared, I have: {items_text}"

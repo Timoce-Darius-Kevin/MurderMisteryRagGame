@@ -1,5 +1,6 @@
 from entities.Player import Player
 from managers.GameStateManager import GameStateManager
+from config.GameConfig import GameConfig
 
 
 class AccusationManager:
@@ -8,10 +9,9 @@ class AccusationManager:
     
     def accuse_player(self, accuser: Player, accused: Player) -> bool:
         if self.validate_accusation(accused):
-            # TODO: Game should end
             return True
         else:
-            self.handle_wrong_accusation(accuser, 30)
+            self.handle_wrong_accusation(accuser, GameConfig.WRONG_ACCUSATION_PENALTY)
             return False
         
     def validate_accusation(self, accused: Player) -> bool:

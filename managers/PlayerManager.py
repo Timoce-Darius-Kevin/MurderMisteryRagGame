@@ -3,6 +3,7 @@ from entities.Item import Item
 from entities.Location import Location
 from entities.Player import Player
 from entities.Room import Room
+from config.GameConfig import GameConfig
 
 
 class PlayerManager:
@@ -74,11 +75,10 @@ class PlayerManager:
         """Move NPCs to random connected rooms"""
         for player in self.get_players():
             if player.id != 0:
-                
                 current_room = self.get_current_room(player)
-                if random.randint(1, 1000000) <= 10000: # Each player has a 1% chance of moving
+                if random.random() < GameConfig.NPC_MOVE_PROBABILITY:
                     if current_room.connected_rooms:
-                        self.decay_mood_toward_neutral(player) # moving makes people more stable
+                        self.decay_mood_toward_neutral(player)  # moving makes people more stable
                         new_room = random.choice(current_room.connected_rooms)
                         players_in_room = self.get_players_in_room(new_room)
                         if len(players_in_room) < new_room.capacity:
@@ -148,13 +148,8 @@ class PlayerManager:
     def decay_mood_toward_neutral(self, player: Player) -> None:
         """Gradually return mood to neutral over time"""
         if player.mood != "neutral":
-            # 20% chance per turn to return to neutral
-            if random.random() < 0.2:
+            if random.random() < GameConfig.MOOD_DECAY_PROBABILITY:
                 if player.mood == "angry":
                     player.mood = "defensive"
                 elif player.mood == "defensive" or player.mood == "cooperative":
                     player.mood = "neutral"
-    
-    def get_known_items(self, player: Player) -> list[Item]:
-        """Get items that are known to others"""
-        return [item for item in player.inventory if item.known]

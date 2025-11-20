@@ -627,11 +627,9 @@ class GameScreen:
     def cleanup_database(self):
         """Clean up the vector database on application exit"""
         try:
-            if hasattr(self.game_manager.rag_manager, 'vector_store'):
-                self.game_manager.rag_manager.vector_store.delete_collection()
-            print("Database cleared successfully.")
+            self.game_manager.cleanup()
         except Exception as e:
-            print(f"Error clearing database: {e}")
+            print(f"Error during cleanup: {e}")
 
     def view_player_details(self):
         """Handle viewing player details (job and known items)"""

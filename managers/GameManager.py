@@ -6,6 +6,7 @@ from managers.AccusationManager import AccusationManager
 from managers.ConversationManager import ConversationManager
 from managers.GameStateManager import GameStateManager
 from managers.PlayerManager import PlayerManager
+from managers.ResourceManager import ResourceManager
 from .RagManager import RagManager
 
 class GameManager:
@@ -19,6 +20,14 @@ class GameManager:
         self.rag_manager = RagManager()
         self.conversation_manager = ConversationManager(self.rag_manager, self.game_state_manager, self.player_manager, self.location)
         self.accusation_manager = AccusationManager(self.game_state_manager)
+        
+        # Initialize resource manager
+        self.resource_manager = ResourceManager()
+        self.resource_manager.initialize(
+            self.rag_manager.llm_service,
+            self.rag_manager.memory_service,
+            self.rag_manager.conversation_repository
+        )
         
         self.initialize_game()
     
@@ -61,3 +70,6 @@ class GameManager:
     def is_game_active(self) -> bool:
         return self.game_state_manager.is_game_active()
     
+    def cleanup(self) -> None:
+        """Clean up game resources"""
+        self.resource_manager.cleanup()
