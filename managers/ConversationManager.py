@@ -1,4 +1,5 @@
-from entities.Conversation import Conversation, Question
+from entities.Question import Question
+from entities.Conversation import Conversation
 from entities.Location import Location
 from managers.PlayerManager import PlayerManager
 from managers.RagManager import RagManager
@@ -26,11 +27,11 @@ class ConversationManager:
         question.listener.suspicion += suspicion_change_listener
         question.speaker.suspicion += suspicion_change_speaker
         
-        question.listener.change_mood_based_on_conversation(
-            question.question, response_text, suspicion_change_listener
+        self.player_manager.change_mood_based_on_conversation(
+            question.listener, question.question, response_text, suspicion_change_listener
         )
-        question.speaker.change_mood_based_on_conversation(
-            question.question, response_text, suspicion_change_speaker
+        self.player_manager.change_mood_based_on_conversation(
+            question.speaker, question.question, response_text, suspicion_change_speaker
         )
         
         if "item" in question.question.lower() or "inventory" in question.question.lower() or "carry" in question.question.lower():

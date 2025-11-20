@@ -1,6 +1,6 @@
 from entities.Player import Player
 from entities.Room import Room
-from entities.Conversation import Question
+from entities.Question import Question
 from entities.Location import Location
 from managers.AccusationManager import AccusationManager
 from managers.ConversationManager import ConversationManager

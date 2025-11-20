@@ -8,7 +8,8 @@ from langchain_core.documents import Document
 from langchain_huggingface import ChatHuggingFace
 from langchain_core.prompts import ChatPromptTemplate
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-from entities.Conversation import Conversation, Question
+from entities.Question import Question
+from entities.Conversation import Conversation
 from entities.Location import Location
 from entities.Player import Player
 from entities.Room import Room

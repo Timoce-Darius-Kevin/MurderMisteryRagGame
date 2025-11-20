@@ -1,4 +1,4 @@
-from .Room import Room
+from entities.Room import Room
 class Location:
     
     def __init__(self, name: str, description: str, max_players: int, event_description = "", rooms: list[Room] = []) -> None:

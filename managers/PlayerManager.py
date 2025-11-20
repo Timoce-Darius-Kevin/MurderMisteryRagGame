@@ -78,7 +78,7 @@ class PlayerManager:
                 current_room = self.get_current_room(player)
                 if random.randint(1, 1000000) <= 10000: # Each player has a 1% chance of moving
                     if current_room.connected_rooms:
-                        player.decay_mood_toward_neutral() # moving makes people more stable
+                        self.decay_mood_toward_neutral(player) # moving makes people more stable
                         new_room = random.choice(current_room.connected_rooms)
                         players_in_room = self.get_players_in_room(new_room)
                         if len(players_in_room) < new_room.capacity:
@@ -109,3 +109,52 @@ class PlayerManager:
             
     def get_current_room(self, player: Player):
         return self.player_tracking[player]
+    
+    def change_mood_based_on_conversation(self, player: Player, question: str, response: str, suspicion_change: int) -> None:
+        """Update player mood based on conversation content and suspicion changes"""
+        question_lower = question.lower()
+        response_lower = response.lower()
+        
+        aggressive_keywords = ["murder", "kill", "weapon", "blood", "guilty", "accuse", "alibi"]
+        defensive_keywords = ["none of your business", "stop asking", "not your concern", "i refuse"]
+        cooperative_keywords = ["help", "assist", "truth", "honest", "cooperate"]
+        
+        mood_change = "neutral"
+
+        if suspicion_change >= 5:
+            mood_change = "angry"
+        elif suspicion_change >= 3:
+            mood_change = "defensive"
+        elif suspicion_change <= -2:
+            mood_change = "cooperative"
+        
+        # Question content affects mood
+        elif any(keyword in question_lower for keyword in aggressive_keywords):
+            if player.mood == "neutral":
+                mood_change = "defensive"
+            elif player.mood == "defensive":
+                mood_change = "angry"
+        
+        # Response content affects mood
+        elif any(keyword in response_lower for keyword in defensive_keywords):
+            mood_change = "defensive"
+        elif any(keyword in response_lower for keyword in cooperative_keywords):
+            mood_change = "cooperative"
+        
+        # Apply mood change
+        if mood_change != "neutral":
+            player.mood = mood_change
+
+    def decay_mood_toward_neutral(self, player: Player) -> None:
+        """Gradually return mood to neutral over time"""
+        if player.mood != "neutral":
+            # 20% chance per turn to return to neutral
+            if random.random() < 0.2:
+                if player.mood == "angry":
+                    player.mood = "defensive"
+                elif player.mood == "defensive" or player.mood == "cooperative":
+                    player.mood = "neutral"
+    
+    def get_known_items(self, player: Player) -> list[Item]:
+        """Get items that are known to others"""
+        return [item for item in player.inventory if item.known]

@@ -1,18 +1,14 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import threading
-import time
 import queue
-from entities.Player import Player
-from entities.Location import Location
-from entities.Conversation import Question
-from entities.Room import Room
+from entities.Question import Question
 from managers.GameManager import GameManager
 from game_logic import generate_location, get_user_inventory, register_user_player, ask_about_inventory
 
 
 class LoadingIndicator:
-    """A Tkinter loading indicator similar to tqdm"""
+    """A Tkinter loading indicator"""
     
     def __init__(self, parent, text="Thinking..."):
         self.parent = parent

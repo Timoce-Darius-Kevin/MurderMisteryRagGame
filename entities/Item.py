@@ -5,9 +5,8 @@ class Item:
         self.item_type: str = item_type
         # TODO: self.danger: int = danger
         # TODO: self.effect: Effect = effect
-        # TODO: self.uses: int = uses
+        # TODO: self.number_of_uses: int = uses
         # TODO: self.danger: int = danger
         self.murder_weapon: bool = murder_weapon
         self.value: int = value
-        # TODO: Implement a system in which the user can view items of a player if that player tells the user about them when asked.
         self.known = known

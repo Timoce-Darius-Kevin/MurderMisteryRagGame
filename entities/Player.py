@@ -1,5 +1,5 @@
 import random
-from .Item import Item
+from entities.Item import Item
 
 class Player:
     
