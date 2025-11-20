@@ -11,5 +11,5 @@ class MemoryService:
         self.vector_store = Chroma(
             collection_name="conversation_memory",
             embedding_function=self.embeddings,
-            persist_directory="../database/conversation.db"
+            persist_directory="./database/conversation.db"
         )

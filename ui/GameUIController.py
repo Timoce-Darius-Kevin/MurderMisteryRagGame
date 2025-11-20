@@ -47,8 +47,6 @@ class GameUIController:
         self._action_handler = GameActionHandler(game_manager, user_player)
         self._threading_service = ThreadingService(error_handler=self._error_handler)
 
-    # --- Query helpers -------------------------------------------------
-
     def get_players_in_current_room(self) -> list[Player]:
         """Return all other players in the current room."""
         return self._action_handler.get_players_in_current_room()
@@ -77,8 +75,6 @@ class GameUIController:
         """Return ``True`` if the game is still active."""
         return self._action_handler.is_game_active()
 
-    # --- Synchronous actions ------------------------------------------
-
     def move_to_room(self, room: Room) -> None:
         """Move the user player to the given room."""
         self._action_handler.move_to_room(room)
@@ -94,8 +90,6 @@ class GameUIController:
         """Clean up underlying game resources."""
         self._action_handler.cleanup()
 
-    # --- Asynchronous actions -----------------------------------------
-
     def start_conversation_async(
         self, player: Player, question_text: str
     ) -> "Queue[Tuple[str, Any]]":
@@ -106,7 +100,6 @@ class GameUIController:
         ``result_dict`` has keys ``response``, ``suspicion_change_speaker``,
         ``suspicion_change_listener``, ``player`` and ``question_text``.
         """
- # Local import to avoid a hard dependency in annotations
 
         def task() -> Dict[str, Any]:
             response, sus_speaker, sus_listener = self._action_handler.ask_question(
